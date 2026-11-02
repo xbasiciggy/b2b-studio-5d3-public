@@ -1,0 +1,21 @@
+# the three settings pages with their previews
+roll 1 14 36
+open home
+500 down
+700 down
+900 down
+1100 set
+1800 set
+2300 down
+2500 set
+3200 menu
+3900 down
+4300 set
+5000 down
+5300 right
+5600 right
+6000 right
+6700 menu
+7400 down
+7800 set
+8600 end

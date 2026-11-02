@@ -1,0 +1,9 @@
+# the end of roll sheet: develop now; then stop half way
+roll 1 36 36
+open end
+1200 set
+6000 menu
+6600 menu
+7400 menu
+8000 set
+9500 end

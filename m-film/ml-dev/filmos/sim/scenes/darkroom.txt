@@ -1,0 +1,10 @@
+# home -> darkroom: mark roll 010, develop it; the darkroom scene runs
+roll 1 14 36
+open home
+600 down
+900 down
+1300 set
+2300 down
+2600 set
+3200 info
+36000 end

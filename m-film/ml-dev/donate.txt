@@ -1,0 +1,7 @@
+# Donation links shown as QR codes on the camera: Settings > System >
+# Support M-FILM. Up to two lines, "Label URL"; the build turns them into
+# ML/DATA/FOSQR.BIN (filmos/tools/genqr.py). With none, the panel says thanks.
+#
+# Stripe https://buy.stripe.com/...
+# PayPal https://paypal.me/...
+Buy the developer a coffee https://buy.stripe.com/7sY14p8d93QE5Ny5M58so02

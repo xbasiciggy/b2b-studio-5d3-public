@@ -1,0 +1,8 @@
+# home -> roll page: the counter turns from S to 14; rewind it
+roll 1 14 36
+open home
+700 down
+1000 set
+2600 set
+3300 set
+5600 end

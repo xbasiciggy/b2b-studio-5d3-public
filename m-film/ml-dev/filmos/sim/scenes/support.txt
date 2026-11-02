@@ -1,0 +1,17 @@
+# Settings > System > Support: the donation codes
+roll 1 14 36
+open home
+500 down
+700 down
+900 down
+1100 down
+1200 down
+1300 set
+2000 down
+2200 down
+2400 down
+2600 down
+2800 down
+3000 down
+3200 down
+4400 end

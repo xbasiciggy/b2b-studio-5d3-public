@@ -1,0 +1,17 @@
+# home -> System -> Screen colour, a little warmer, then back
+roll 2 8 36
+open home
+800 down
+1000 down
+1200 down
+1400 down
+1600 down
+1900 set
+2700 down
+2900 down
+3300 set
+4200 down
+4500 down
+4800 right
+5100 right
+6000 end

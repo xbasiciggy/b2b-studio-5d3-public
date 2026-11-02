@@ -1,0 +1,5 @@
+# the darkroom after developing roll 010; the end of roll sheet
+open darkroom
+1200 down
+1500 down
+2200 end

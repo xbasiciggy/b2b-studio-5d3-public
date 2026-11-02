@@ -1,0 +1,4 @@
+# the last frame shot: the film OS opens on the roll, asking
+roll 1 36 36
+open end
+1600 end

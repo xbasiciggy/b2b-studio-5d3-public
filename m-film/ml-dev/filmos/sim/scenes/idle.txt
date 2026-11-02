@@ -1,0 +1,4 @@
+# leave the shelf alone: the middle canister sways
+noroll
+open shelf
+7000 end

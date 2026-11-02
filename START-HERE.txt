@@ -1,0 +1,38 @@
+B2B Studio for the Canon EOS 5D Mark III  (beta 1)
+Canon EOS 5D Mark III, CANON FIRMWARE 1.2.3 ONLY.  Experimental software: use at your own risk.
+
+WHAT IT DOES
+Shoot normally (JPEG). Every picture is baked in the background with a film look, using a 3D colour table, and saved
+as a new JPEG in the PIXELJPG folder on the card. Your Canon originals in DCIM are never touched. A film-style
+interface (canister shelf, Home, Images, Develop) runs on the camera's screen. This release comes with the 72
+film looks of the M-Film project and one extra preset, Cold Vibes.
+
+WHAT YOU NEED
+- A 5D Mark III on Canon firmware 1.2.3 that already runs Magic Lantern for the 5D3.123 (install Magic Lantern first,
+  from magiclantern.fm / the reticulatedpines "magiclantern_simplified" builds, and check that it starts).
+- A card with room for the baked copies. Use JPEG (Large, Medium or Small).
+- BACK UP THE CARD first.
+
+INSTALL
+1. Camera off. Copy autoexec.bin and the ML folder from this zip to the root of the card that already boots
+   Magic Lantern, replacing files with the same name. Do not run "Firmware Update" again.
+2. Switch the camera on. If you have Start screen on (System page), the film shelf opens; otherwise press the
+   TRASH button on the shooting screen for Home.
+3. Pick a look (Film), then shoot. Open Develop to watch the bake queue and Images to look at the results.
+To go back: restore your card backup.
+
+BUTTONS (shooting screen)  TRASH = Home, PLAY = Images.   Settings are under Home > System, Viewfinder and Lens.
+If the camera does not start, take the battery and card out, then start it without the card.
+
+WHAT TO EXPECT
+Baking one picture takes tens of seconds (the camera's processor is slow); shots queue up and are baked one at a
+time, and a half-press pauses the bake. The review after a shot is a quick preview, not the finished picture.
+
+PROBLEMS
+System > Debug log writes ML/FILMROLL.LOG. Attach it when you report a problem. System > Self-test writes speed numbers to it.
+
+CREDITS AND LICENCES
+Built on M-Film by HNGSeries (https://github.com/HNGSeries/M-Film) and Magic Lantern (https://magiclantern.fm).
+Film colour tables: Film-Luts by Yahia Angelo (MIT). TJpgDec by ChaN. Barlow typeface by Jeremy Tribby (SIL OFL).
+Free software, GPL-2.0 (see LICENSE.txt and THIRD_PARTY.md). Not affiliated with Canon, Kodak, Fujifilm or others.
+The QR code under Home > System > Support leads to the M-Film developer's tip page.

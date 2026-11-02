@@ -1,0 +1,10 @@
+# System > Re-apply shows a toast
+roll 1 14 36
+open home
+600 up
+900 set
+1700 down
+1900 down
+2100 down
+2500 set
+4800 end

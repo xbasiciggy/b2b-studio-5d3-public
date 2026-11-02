@@ -1,0 +1,5 @@
+# the darkroom: a developed roll missing JPEGs is waiting again; develop all
+noroll
+open darkroom
+1500 info
+40000 end

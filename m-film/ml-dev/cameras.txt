@@ -1,0 +1,40 @@
+# The cameras Magic Lantern runs on, and where M-Film is on each.
+# platform     status    boot-limit  name
+#   status:   working  tried on the camera, works
+#             testing  builds; waiting for someone to try it on the camera
+#             planned  not started yet, but should be possible
+#             no       not for now: Magic Lantern itself is experimental there (DIGIC 6 and later)
+#   boot-limit: the largest autoexec.bin (bytes at boot) known to start on it, - if not known yet
+#             (6D: what the fork reserves for ML at boot, see the 6D edit in fork/apply_fork.py)
+EOSM.202      working   727072      Canon EOS M
+100D.101      testing   -           Canon EOS 100D / Rebel SL1 / Kiss X7
+650D.104      testing   -           Canon EOS 650D / Rebel T4i / Kiss X6i
+700D.115      testing   -           Canon EOS 700D / Rebel T5i / Kiss X7i
+6D.116        testing   868096      Canon EOS 6D
+70D.112       testing   -           Canon EOS 70D
+5D3.113       testing   -           Canon EOS 5D Mark III (firmware 1.1.3)
+5D3.123       testing   -           Canon EOS 5D Mark III (firmware 1.2.3)
+550D.109      testing   -           Canon EOS 550D / Rebel T2i / Kiss X4
+600D.102      testing   -           Canon EOS 600D / Rebel T3i / Kiss X5
+60D.111       testing   -           Canon EOS 60D
+1100D.105     testing   -           Canon EOS 1100D / Rebel T3 / Kiss X50
+500D.111      testing   -           Canon EOS 500D / Rebel T1i / Kiss X3
+50D.109       testing   -           Canon EOS 50D
+5D2.212       testing   -           Canon EOS 5D Mark II
+7D.203        no        -           Canon EOS 7D (Magic Lantern's current source doesn't build it)
+200D.101      no        -           Canon EOS 200D / Rebel SL2
+750D.110      no        -           Canon EOS 750D / Rebel T6i
+77D.110       no        -           Canon EOS 77D
+80D.103       no        -           Canon EOS 80D
+7D2.112       no        -           Canon EOS 7D Mark II
+5D4.133       no        -           Canon EOS 5D Mark IV
+5DSR.112      no        -           Canon EOS 5DS R
+6D2.111       no        -           Canon EOS 6D Mark II
+850D.100      no        -           Canon EOS 850D / Rebel T8i
+M50.110       no        -           Canon EOS M50
+R.180         no        -           Canon EOS R
+RP.160        no        -           Canon EOS RP
+R5.152        no        -           Canon EOS R5
+R6.150        no        -           Canon EOS R6
+SX70.111      no        -           Canon PowerShot SX70 HS
+SX740.102     no        -           Canon PowerShot SX740 HS

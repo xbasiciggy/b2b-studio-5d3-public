@@ -1,0 +1,13 @@
+# after developing (darkroom scene): PLAY opens the newest prints
+open prints
+1400 right
+1700 right
+2000 down
+2600 set
+3600 right
+4600 info
+5400 wr
+6400 menu
+7400 wr
+8600 menu
+9600 end

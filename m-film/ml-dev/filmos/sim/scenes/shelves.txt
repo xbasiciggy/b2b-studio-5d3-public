@@ -1,0 +1,12 @@
+# the shelves: browse colour, then slide, B&W, cine
+noroll
+open shelf
+900 wr
+1300 wr
+2200 down
+3400 wr
+4400 down
+5600 down
+6800 wl
+7800 up
+9000 end

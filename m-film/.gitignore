@@ -1,0 +1,27 @@
+# Canon firmware files (Canon's copyright, not ours to publish)
+firmware/
+
+# photos: test RAWs and developed rolls
+Pic Test/
+out/
+*.CR2
+*.cr2
+# except the photo the shelf shows developed with every film (PLAY on the shelf)
+!ml-dev/films/sample/SAMPLE.CR2
+
+# Python
+.venv/
+__pycache__/
+
+# ML build outputs, card backups and logs (rebuilt by ml-dev/build_*.sh)
+ml-dev/out/
+ml-dev/card_backup/
+ml-dev/*.log
+
+# film OS simulator output (frames, previews)
+ml-dev/filmos/sim/out/
+
+# film LUTs are usually licensed: keep them out of the repo
+ml-dev/films/luts/*.cube
+ml-dev/films/luts/filmluts/
+

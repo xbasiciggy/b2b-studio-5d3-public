@@ -1,0 +1,7 @@
+# shell scripts run inside WSL: keep LF line endings
+*.sh text eol=lf
+*.py text eol=lf
+*.c  text eol=lf
+*.h  text eol=lf
+*.patch text eol=lf
+Makefile text eol=lf

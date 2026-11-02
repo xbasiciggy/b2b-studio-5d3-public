@@ -1,0 +1,10 @@
+# the shelf's sample: PLAY shows the film's photo full screen, the arrows the next films, PLAY back
+noroll
+open shelf
+900 play
+2000 right
+3000 wr
+4000 info
+4600 info
+5400 play
+6400 end

@@ -1,0 +1,7 @@
+# boot, then pick Ektar and load it
+noroll
+open boot
+2600 wr
+2900 wr
+3800 set
+6600 end

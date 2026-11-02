@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.DS_Store
+arm-build.log
+*.o
+tests/*-host
+tests/zoomcheck
+tests/lutcheck
+m-film/ml-dev/out/

@@ -1,0 +1,19 @@
+# home -> viewfinder settings -> toggle -> back -> roll page -> rewind cancel
+roll 1 14 36
+open home
+900 down
+1200 down
+1450 down
+1700 set
+2600 down
+2900 set
+3400 down
+3700 down
+3900 right
+4600 menu
+5400 up
+5700 up
+6000 set
+7600 set
+8400 menu
+9200 end

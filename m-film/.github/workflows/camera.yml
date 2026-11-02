@@ -1,0 +1,134 @@
+name: M-Film camera
+
+# Builds the camera files (Magic Lantern + Film OS) for every camera in ml-dev/cameras.txt
+# that is "working" or "testing". (Darkrooms, the desktop program, is built in its own repository.)
+#   git tag v0.1.0 && git push origin v0.1.0     builds and publishes the zips under Releases
+#                                                (the tag must match the VERSION file)
+#   Actions > "M-Film camera" > Run workflow     builds and keeps the zips as artifacts; with a
+#                                                tag in the box it publishes them as well
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish the builds under (leave empty to only build)"
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+    branches: ["main"]
+    paths: ["ml-dev/**", "VERSION", ".github/workflows/camera.yml"]
+  pull_request:
+    paths: ["ml-dev/**", "VERSION", ".github/workflows/camera.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  camera:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [EOSM.202, 100D.101, 650D.104, 700D.115, 6D.116, 70D.112, 5D3.113, 5D3.123, 550D.109, 600D.102, 60D.111, 1100D.105, 500D.111, 50D.109, 5D2.212]  # from ml-dev/cameras.txt
+    runs-on: ubuntu-24.04
+    name: camera ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # ML's module build still imports distutils (gone in 3.12)
+      - name: Toolchain and Magic Lantern (the commit the fork is made against)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-none-eabi binutils-arm-none-eabi zip
+          python -m pip install -q numpy scipy pillow segno docutils
+          git clone -q --filter=blob:none https://github.com/reticulatedpines/magiclantern_simplified.git "$HOME/ml/magiclantern_simplified"
+          git -C "$HOME/ml/magiclantern_simplified" checkout -q ed3e7c0dfacfdeaf3349dee73edf9e3621217462
+          arm-none-eabi-gcc --version | head -1
+      - name: Build
+        run: bash ml-dev/build_fork.sh ${{ matrix.platform }}
+      - name: Zip
+        run: |
+          p=${{ matrix.platform }}
+          if [ "$p" = EOSM.202 ]; then d=ml-dev/out/fork; else d=ml-dev/out/fork-$p; fi
+          cp ml-dev/CAMERA-README.txt "$d/M-FILM-README.txt"
+          # the licence and the notices travel with the binaries (GPL-2.0 section 1; the MIT notice of
+          # Film-Luts, whose LUTs the colour tables and samples in ML/ are made from)
+          cp LICENSE "$d/LICENSE.txt"
+          cp THIRD_PARTY.md "$d/THIRD_PARTY.txt"
+          (cd "$d" && zip -qr "$GITHUB_WORKSPACE/M-Film-camera-$p.zip" .)
+          ls -la M-Film-camera-$p.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: M-Film-camera-${{ matrix.platform }}
+          path: M-Film-camera-${{ matrix.platform }}.zip
+          if-no-files-found: error
+
+  # builds for testers, not for releases: cameras where the full one may not fit (see the issue that
+  # asked for it). Their artifacts are named test-..., which the release leaves out.
+  camera-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [6D.116]    # built --no-darkroom
+    runs-on: ubuntu-24.04
+    name: camera ${{ matrix.platform }} (no darkroom, for testing)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # ML's module build still imports distutils (gone in 3.12)
+      - name: Toolchain and Magic Lantern (the commit the fork is made against)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-none-eabi binutils-arm-none-eabi zip
+          python -m pip install -q numpy scipy pillow segno docutils
+          git clone -q --filter=blob:none https://github.com/reticulatedpines/magiclantern_simplified.git "$HOME/ml/magiclantern_simplified"
+          git -C "$HOME/ml/magiclantern_simplified" checkout -q ed3e7c0dfacfdeaf3349dee73edf9e3621217462
+          arm-none-eabi-gcc --version | head -1
+      - name: Build
+        run: bash ml-dev/build_fork.sh ${{ matrix.platform }} --no-darkroom
+      - name: Zip
+        run: |
+          p=${{ matrix.platform }}
+          d=ml-dev/out/fork-$p-nodark
+          cp ml-dev/CAMERA-README.txt "$d/M-FILM-README.txt"
+          # the licence and the notices travel with the binaries (GPL-2.0 section 1; the MIT notice of
+          # Film-Luts, whose LUTs the colour tables and samples in ML/ are made from)
+          cp LICENSE "$d/LICENSE.txt"
+          cp THIRD_PARTY.md "$d/THIRD_PARTY.txt"
+          (cd "$d" && zip -qr "$GITHUB_WORKSPACE/M-Film-camera-$p-nodark.zip" .)
+          ls -la M-Film-camera-$p-nodark.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-M-Film-camera-${{ matrix.platform }}-nodark
+          path: M-Film-camera-${{ matrix.platform }}-nodark.zip
+          if-no-files-found: error
+
+  release:
+    needs: [camera]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.tag != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag is the VERSION file's
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          want="v$(tr -d ' \r\n' < VERSION)"
+          [ "$tag" = "$want" ] || { echo "tag $tag but VERSION says $want: change one of them"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: M-Film-camera-*      # not the test-... builds
+          path: zips
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: M-Film ${{ inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          # the README's Download links go to releases/latest; Darkrooms' releases here never take it
+          make_latest: true
+          files: zips/*.zip
+          body: |
+            **On the camera** (`M-Film-camera-<camera>.zip`): the Film OS with Magic Lantern. Unzip it onto the card
+            and run *Firmware ver.* → update once (see M-FILM-README.txt in the zip). The EOS M build is tried on
+            the camera; the others build but nobody has tried them yet: see TESTING.md before you put one on your camera.

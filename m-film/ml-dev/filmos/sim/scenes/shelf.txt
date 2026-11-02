@@ -1,0 +1,11 @@
+# browse the shelf, change exposures
+noroll
+open shelf
+900 wr
+1150 wr
+1300 wr
+2300 wl
+3200 down
+3900 right
+4200 right
+5200 end

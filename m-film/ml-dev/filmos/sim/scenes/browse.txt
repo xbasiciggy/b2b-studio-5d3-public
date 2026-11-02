@@ -1,0 +1,11 @@
+# for the preview GIF: glide through the shelf and back
+noroll
+open shelf
+700 wr
+950 wr
+1200 wr
+1900 down
+2500 wl
+2750 wl
+3000 wl
+3800 end
