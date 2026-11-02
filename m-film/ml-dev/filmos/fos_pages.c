@@ -238,6 +238,7 @@ static const char *const wind_choices[] = { "Off", "Reminder", "Locks shutter" }
 static const char *const apkey_choices[] = { "Dial in Av", "Up / Down", "Menu only" };
 static const char *const start_choices[] = { "Off", "When no film", "Always" };
 static const char *const theme_choices[] = { "Red", "Orange", "Neon green" };
+static const char *const portrait_choices[] = { "Upright", "Fill screen" };
 static const char *const effect_choices[] = { "Off", "Light", "Medium", "Strong" };
 
 static const struct item finder_items[] =
@@ -262,6 +263,7 @@ static const struct item system_items[] =
     { "Start screen", IT_CHOICE, FS_STARTUP, start_choices, 3, "The film shelf when the camera turns on." },
     { "Boot animation", IT_TOGGLE, FS_BOOTANIM, 0, 0, "The aperture opening on the name at power on." },
     { "Screen colour", IT_PAGE, PAGE_SCREEN, 0, 0, "Match these colours to what you see around you." },
+    { "Portrait review", IT_CHOICE, FS_PORTRAIT, portrait_choices, 2, "Pictures shot upright: Fill screen turns them to use the whole screen (tilt your head), Upright keeps them small." },
     { "Grain", IT_CHOICE, FS_GRAIN, effect_choices, 4, "Film grain baked into new pictures (mid tones most). The review does not show it." },
     { "Halation", IT_CHOICE, FS_HALATION, effect_choices, 4, "A warm glow around bright areas, baked into new pictures. Slower bakes." },
     { "Theme", IT_CHOICE, FS_THEME, theme_choices, 3, "The colour of the Home and Film menus and their accents." },
@@ -289,7 +291,7 @@ static const struct { const char *title; const char *sub; const struct item *ite
 {
     { "Viewfinder", "What you see in LiveView while you shoot", finder_items, 5 },
     { "Lens", "Aperture for manual lenses", lens_items, 4 },
-    { "System", "Grain, halation, screen colour, theme, start up", system_items, 13 },
+    { "System", "Grain, halation, screen colour, theme, start up", system_items, 14 },
     { "Screen colour", "Live: the whole film OS changes as you go", screen_items, 5 },
 };
 

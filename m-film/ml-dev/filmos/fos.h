@@ -108,6 +108,7 @@ enum
     FS_SCR_STD,         /* screen colour: 0 Canon's conversion, 1 Rec.709 */
     FS_SCR_SAT, FS_SCR_WARM, FS_SCR_BRIGHT,     /* -FOS_SCR_STEPS..FOS_SCR_STEPS */
     FS_THEME,           /* colour theme of the Home and Film menus: 0 red, 1 orange, 2 neon green */
+    FS_PORTRAIT,                /* review of a picture shot upright: 0 upright (small), 1 turned to fill the screen */
     FS_PLATE,                   /* the back screen as a film camera's top plate while LiveView is off */
     FS_GRAIN, FS_HALATION,      /* baked looks: 0 off, 1 light, 2 medium, 3 strong */
     FS_COUNT

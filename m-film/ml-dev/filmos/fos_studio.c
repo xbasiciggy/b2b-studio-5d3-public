@@ -84,6 +84,7 @@ static void load_picture(void){
  if(!fos_preview_exists(path))fos_plain_preview(path);
  struct fos_preview cached;
  if(fos_preview_load(path,&cached,&orientation)){
+  if(fos_port_get(FS_PORTRAIT)==1&&(orientation==6||orientation==8))orientation=1;         /* shot upright: shown turned, to fill the screen */
   cached_picture(&cached);picture_palette(&cached);fos_preview_free(&cached);have_picture=1;
   void *original=fos_port_open(path,0);quick_review=!original||fos_port_bake_pending(names[selection]);
   if(original)fos_port_close(original);
@@ -97,7 +98,10 @@ static int live_enter(void){
  if(zlevel)zoom_off();
  if(!picture)picture=fos_port_alloc(720*480);
  if(!picture)return 0;
- const int sw=fos_live.w,sh=fos_live.h,o=fos_live.orientation;
+ const int sw=fos_live.w,sh=fos_live.h;
+ int o=fos_live.orientation;
+ if(fos_port_get(FS_PORTRAIT)==1&&(o==6||o==8))o=1;
+ fos_live.paint_orient=o==fos_live.orientation?0:o;
  if(sw<1||sh<1)return 0;
  int ow=sw,oh=sh;if(o==6||o==8){ow=sh;oh=sw;}
  int dw=720,dh=oh*720/ow;if(dh>480){dw=dw*480/dh;dh=480;}

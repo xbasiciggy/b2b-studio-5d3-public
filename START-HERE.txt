@@ -1,4 +1,4 @@
-B2B Studio for the Canon EOS 5D Mark III  (beta 1)
+B2B Studio for the Canon EOS 5D Mark III  (beta 2)
 Canon EOS 5D Mark III, CANON FIRMWARE 1.2.3 ONLY.  Experimental software: use at your own risk.
 
 WHAT IT DOES

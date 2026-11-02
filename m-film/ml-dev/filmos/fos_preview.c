@@ -157,7 +157,7 @@ __attribute__((weak)) void fos_port_sleep(int ms){(void)ms;}
 __attribute__((weak)) void fos_port_live_started(void){}
 struct fos_live fos_live;
 void fos_live_begin(const struct fos_preview *p,int orientation,const char *name){
- fos_live.active=0;fos_live.finishing=0;fos_live.acked=0;fos_live.rows=0;fos_live.result=0;
+ fos_live.active=0;fos_live.finishing=0;fos_live.acked=0;fos_live.rows=0;fos_live.result=0;fos_live.paint_orient=0;
  fos_live.w=p->w;fos_live.h=p->h;fos_live.orientation=orientation;fos_live.rgb=p->rgb;
  snprintf(fos_live.name,sizeof(fos_live.name),"%s",name);
  fos_live.serial++;fos_live.active=p->rgb!=0;
@@ -178,7 +178,7 @@ void fos_live_cube(uint8_t pal[216][3]){
  for(int i=0;i<216;i++){pal[i][0]=i/36*51;pal[i][1]=i/6%6*51;pal[i][2]=i%6*51;}
 }
 void fos_live_paint(uint8_t *dst,int from,int to){
- const int sw=fos_live.w,sh=fos_live.h,o=fos_live.orientation;
+ const int sw=fos_live.w,sh=fos_live.h,o=fos_live.paint_orient?fos_live.paint_orient:fos_live.orientation;
  if(!fos_live.rgb||sw<1||sh<1)return;
  if(to>sh)to=sh;
  if(from<0)from=0;

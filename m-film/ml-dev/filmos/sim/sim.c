@@ -39,7 +39,7 @@ static int settings[FS_COUNT] = {
     [FS_HUD] = 1, [FS_LEDS] = 1, [FS_FOCUS] = 1, [FS_WIND] = 1,
     [FS_APKEYS] = 0, [FS_LENS_WIDE] = 6, [FS_FSTOP] = 10,
     [FS_STARTUP] = 2, [FS_PLAYLOCK] = 1, [FS_BOOTANIM] = 1, [FS_DEBUG] = 0,
-    [FS_FILM] = 0, [FS_EXP] = 0, [FS_THEME] = 0, [FS_PLATE] = 1, [FS_GRAIN] = 0, [FS_HALATION] = 0,
+    [FS_FILM] = 0, [FS_EXP] = 0, [FS_THEME] = 0, [FS_PLATE] = 1, [FS_PORTRAIT] = 1, [FS_GRAIN] = 0, [FS_HALATION] = 0,
 };
 static struct fos_roll roll = { 1, 12, 1, 36, 14, 0, "2026-10-21 18:02", 3,
     { { 14, "21:47", "2" }, { 13, "21:40", "2" }, { 12, "21:33", "2.8" } } };

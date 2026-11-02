@@ -40,6 +40,7 @@ struct fos_live {
     volatile int finishing, acked;      /* all rows are in; the screen has taken them */
     volatile int rows;                  /* complete output rows, from the top */
     volatile int result;                /* 0 building, 1 saved, 2 failed */
+    volatile int paint_orient;          /* the screen's own orientation for painting (0: the picture's); set to 1 to show a portrait picture sideways */
     int w, h, orientation;
     const uint8_t *rgb;
     char name[13];                      /* Pssssfff.JPG, the review's file name */

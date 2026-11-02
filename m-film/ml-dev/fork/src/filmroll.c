@@ -74,6 +74,7 @@ static CONFIG_INT("filmroll.startup",   startup_picker,   2);   /* 0 off, 1 when
 static CONFIG_INT("filmroll.bootanim",  boot_anim,        0);
 static CONFIG_INT("filmroll.colour",   ui_theme_cfg,     0);
 static CONFIG_INT("filmroll.plate",     plate_enabled,    1);
+static CONFIG_INT("filmroll.portrait",  portrait_cfg,     1);
 static CONFIG_INT("filmroll.grain",     grain_cfg,        0);
 static CONFIG_INT("filmroll.halation",  halation_cfg,     0);
 static CONFIG_INT("filmroll.debug",     debug_log,        1);
@@ -1165,6 +1166,7 @@ static int *setting_var(int s)
         case FS_SCR_BRIGHT: return &scr_bright;
         case FS_THEME:      return &ui_theme_cfg;
         case FS_PLATE:      return &plate_enabled;
+        case FS_PORTRAIT:   return &portrait_cfg;
         case FS_GRAIN:      return &grain_cfg;
         case FS_HALATION:   return &halation_cfg;
     }
@@ -1539,8 +1541,7 @@ static void plate_fill(struct fos_hud *h, int lit, int blink)
     h->lit = 1;                                 /* the plate's readouts are always lit; `lit` (half-press) only turns the meter on */
     h->blink = blink;
     h->fstop = current_fstop();
-    if (lit)
-    {
+    {   /* the meter is always on: the pointer follows the last reading, which Canon keeps between half-presses */
         int ev8 = get_ae_value();
         h->meter = 1;
         h->want = h->fstop + (ev8 * 3 + (ev8 >= 0 ? 4 : -4)) / 8;
@@ -1572,6 +1573,7 @@ static void plate_fill(struct fos_hud *h, int lit, int blink)
 
 /* the plate's accent follows the colour theme, from Canon's own palette entries (red; its burnt orange, entry 4; green): Canon's
  * palette has nothing brighter, and the LiveView HUD stays red */
+static uint8_t *plate_buf;
 static void plate_draw(int lit, int blink)
 {
     static const uint8_t accent[3][2] = { { COLOR_RED, COLOR_DARK_RED }, { 4, 4 }, { COLOR_GREEN2, COLOR_GREEN1 } };
@@ -1581,9 +1583,20 @@ static void plate_draw(int lit, int blink)
     hud_pal.red = accent[t][0];
     hud_pal.dark_red = accent[t][1];
     hud_pal.alert = COLOR_RED;
+    /* drawn in a buffer of its own and copied across in one go: clearing and redrawing on the live screen showed as a flicker */
     uint8_t *vram = bmp_vram();
     if (vram)
-        fos_hud_plate(vram, BMPPITCH, &h, &hud_pal);
+    {
+        if (!plate_buf) plate_buf = fos_port_alloc_hot(720 * 480);
+        if (plate_buf)
+        {
+            fos_hud_plate(plate_buf, 720, &h, &hud_pal);
+            for (int y = 0; y < 480; y++)
+                memcpy(vram + y * BMPPITCH, plate_buf + y * 720, 720);
+        }
+        else
+            fos_hud_plate(vram, BMPPITCH, &h, &hud_pal);
+    }
     hud_pal.red = COLOR_RED;
     hud_pal.dark_red = COLOR_DARK_RED;
 }
@@ -1605,6 +1618,8 @@ static void plate_clear()
     uint8_t *vram = bmp_vram();
     if (vram)
         fos_hud_plate_clear(vram, BMPPITCH, &hud_pal);
+    fos_port_free(plate_buf);                   /* the buffer is only held while the plate is up */
+    plate_buf = 0;
 }
 
 static void hud_clear()
@@ -1684,7 +1699,8 @@ static void hud_step()
     int lit = !leds_on_half || get_halfshutter_pressed() || now < leds_until;
     int blink = (now / 400) % 2;
     if (plate && !bake_queued_now()) blink = 0;           /* nothing on the plate pulses unless a bake is waiting */
-    int ev8 = lit ? get_ae_value() : 0;
+    int ev8 = (lit || plate) ? get_ae_value() : 0;
+    if (plate) ev8 = (ev8 * 3 + (ev8 >= 0 ? 4 : -4)) / 8;        /* the plate only needs the pointer's third of a stop: redraw when that moves, not on every tiny reading */
 
     int sig = lit | blink << 1 | need_wind << 2 | (frames_shot & 0xFF) << 3
             | lens_info.raw_shutter << 11 | (ev8 & 0xFF) << 19 | (current_fstop() & 0x1F) << 27;
