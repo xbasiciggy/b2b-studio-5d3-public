@@ -73,14 +73,15 @@ static int seg_bits(int ch)
         case 'u': return 0x1C;
         case 'L': return 0x38;
         case 'S': return 0x6D;
+        case 'A': return 0x77;
+        case 't': return 0x78;
+        case 'o': return 0x5C;
     }
     return 0;
 }
 
-#define DIG_W   15
-#define DIG_H   26
-#define SEG_T   3
-#define DIG_GAP 6
+static int DIG_W = 15, DIG_H = 26, SEG_T = 3, DIG_GAP = 6;     /* the plate draws them bigger */
+static void seg_size(int w, int h, int t, int gap) { DIG_W = w; DIG_H = h; SEG_T = t; DIG_GAP = gap; }
 
 /* one slanted digit; off segments are drawn faintly, like the unlit LEDs
  * you can just see behind a real viewfinder mask */
@@ -146,6 +147,24 @@ static void needle(int y, uint8_t c)
     int x0 = W - STRIP_W + 4;
     for (int r = -7; r <= 7; r++)
         fill(x0, y + r, 16 - 2 * (r < 0 ? -r : r), 1, c);
+}
+
+/* the look the next frame gets: a red tab, its name, and any baked looks that are on */
+static void look_badge(int bx, int by, const struct fos_hud *h)
+{
+    if (!h->film) return;
+    const struct fos_font *f = &fos_font_xs;
+    char tags[32];
+    tags[0] = 0;
+    if (h->grain) snprintf(tags, sizeof(tags), "GRAIN");
+    if (h->halation) snprintf(tags + strlen(tags), sizeof(tags) - strlen(tags), "%sHALATION", tags[0] ? "  " : "");
+    int nw = fos_text_w(f, h->film, 24), tw = tags[0] ? fos_text_w(f, tags, 24) : 0;
+    int bw = 8 + 8 + 8 + nw + (tw ? 14 + tw : 0) + 10, bh = 26;
+    fill(bx, by, bw, bh, pal->gray[30]);
+    fill(bx + 1, by + 1, bw - 2, bh - 2, pal->black);
+    fill(bx + 1, by + 1, 6, bh - 2, pal->red);
+    text_gray(f, bx + 22, by + 18, h->film, 92, 24);
+    if (tw) text_led(f, bx + 22 + nw + 14, by + 18, tags, 1, 24);
 }
 
 /* ---------------------------------------------------------------- the HUD */
@@ -229,12 +248,7 @@ void fos_hud_draw(uint8_t *vram, int pitch, const struct fos_hud *h, const struc
         text_gray(&fos_font_sm, 452 + w + 2, base - 2, n, lit_count ? 55 : 28, 0);
     }
 
-    /* which film, quietly */
-    if (h->film)
-    {
-        int w = fos_text_w(&fos_font_xs, h->film, 32);
-        text_gray(&fos_font_xs, W - 22 - w, base - 6, h->film, 40, 32);
-    }
+    look_badge(14, 12, h);
 
     /* focusing screen: microprism collar and split-image circle */
     if (h->focus_screen)
@@ -259,4 +273,182 @@ void fos_hud_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p)
     fill(W - STRIP_W, 0, STRIP_W, VIEW_H, p->clear);
     fill(0, VIEW_H, W, BAR_H, p->clear);
     fill(VIEW_W / 2 - 64, VIEW_H / 2 - 64, 129, 129, p->clear);
+}
+
+/* ---------------------------------------------------------------- the back screen */
+
+/* a rounded rectangle: each row is inset by the circle of radius r */
+static void rrect(int x, int y, int w, int hh, int r, uint8_t c)
+{
+    if (r > hh / 2) r = hh / 2;
+    for (int j = 0; j < hh; j++)
+    {
+        int e = j < hh - 1 - j ? j : hh - 1 - j, in = 0;
+        if (e < r) in = r - fos_isqrt((unsigned) (r * r - (r - e) * (r - e)));
+        fill(x + in, y + j, w - 2 * in, 1, c);
+    }
+}
+
+static int seg_width(const char *s)
+{
+    int w = 0;
+    for (; *s; s++) w += *s == '.' ? 2 : *s == '"' ? 8 : DIG_W + DIG_GAP;
+    return w > DIG_GAP ? w - DIG_GAP : w;
+}
+
+/* the glossy red tube of the bake bar: a lit top, the body, a shaded underside (Canon's palette has one red and one dark red) */
+static void tube(int x, int y, int w, int hh, int r, const struct fos_hud_palette *p, uint8_t body, uint8_t shade)
+{
+    for (int j = 0; j < hh; j++)
+    {
+        int e = j < hh - 1 - j ? j : hh - 1 - j, in = 0;
+        if (e < r) in = r - fos_isqrt((unsigned) (r * r - (r - e) * (r - e)));
+        uint8_t a = body, b = body;
+        if (j == 0 || j >= hh - 2) a = b = shade;
+        else if (j == 1) { a = p->gray[85]; b = body; }
+        else if (j == 2) { a = body; b = p->gray[60]; }
+        else if (j >= hh - 4) { a = body; b = shade; }
+        for (int i = in; i < w - in; i++) vr[(y + j) * vp + x + i] = ((x + i + j) & 1) ? a : b;
+    }
+}
+
+/* a small picture icon for the quality chip: a frame, a sun, and a mountain that is solid for Fine and hollow for Normal */
+static void pic_icon(int x, int y, int fine, uint8_t c)
+{
+    fill(x, y, 18, 1, c);
+    fill(x, y + 13, 18, 1, c);
+    fill(x, y, 1, 14, c);
+    fill(x + 17, y, 1, 14, c);
+    fill(x + 12, y + 3, 2, 2, c);                           /* the sun */
+    for (int r = 0; r < 8; r++)                             /* the mountain: peak at x+6, base on the bottom row */
+    {
+        int half = r, left = x + 7 - half, wd = 2 * half + 1;
+        if (left < x + 2) { wd -= x + 2 - left; left = x + 2; }
+        if (left + wd > x + 16) wd = x + 16 - left;
+        if (wd <= 0) continue;
+        if (fine || r == 7) fill(left, y + 5 + r, wd, 1, c);
+        else { fill(left, y + 5 + r, 1, 1, c); fill(left + wd - 1, y + 5 + r, 1, 1, c); }
+    }
+}
+
+void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p)
+{
+    vr = vram; vp = pitch; pal = p;
+    fill(0, 0, W, H, p->black);
+
+    /* the top: the look the next frame gets, and the speed of the film */
+    look_badge(28, 24, h);
+    /* top right: the picture quality, an icon and the size ("S1", "L", "RAW+M"); the icon's mountain is solid for Fine */
+    if (h->quality[0])
+    {
+        const int tw = fos_text_w(&fos_font_sm, h->quality, 16);
+        text_gray(&fos_font_sm, W - 28 - tw, 48, h->quality, 90, 16);
+        pic_icon(W - 28 - tw - 28, 33, h->quality_fine, p->gray[82]);
+    }
+    fill(28, 70, W - 56, 1, p->gray[18]);
+
+    /* three windows: shutter, aperture, frame. Unlit segments show faintly behind the lit ones. */
+    static const char *const label[3] = { "SHUTTER", "APERTURE", "ISO" };
+    const int wx[3] = { 28, 260, 492 }, wy = 108, ww = 200, wh = 100;
+    char text[3][12];
+    snprintf(text[0], sizeof(text[0]), "%s", h->shutter[0] ? h->shutter : "--");
+    fos_format_fstop(text[1], sizeof(text[1]), h->fstop);
+    if (h->iso > 0) snprintf(text[2], sizeof(text[2]), "%d", h->iso);
+    else snprintf(text[2], sizeof(text[2]), "Auto");
+    seg_size(30, 56, 6, 10);
+    for (int i = 0; i < 3; i++)
+    {
+        text_gray(&fos_font_xs, wx[i] + 6, 100, label[i], 45, 28);
+        rrect(wx[i], wy, ww, wh, 16, p->gray[18]);
+        rrect(wx[i] + 1, wy + 1, ww - 2, wh - 2, 15, p->gray[5]);
+        int lit = 1;                                                    /* the readouts are always lit on the plate; only the meter pointer waits for a half-press */
+        if (seg_width(text[i]) > ww - 28) seg_size(22, 40, 4, 8);        /* six-digit ISOs: smaller digits */
+        int dx = wx[i] + (ww - seg_width(text[i])) / 2 + (i == 1 ? 14 : 0);
+        seg_text(dx, wy + (wh - DIG_H) / 2, text[i], lit);
+        seg_size(30, 56, 6, 10);
+    }
+    seg_size(15, 26, 3, 6);
+    text_gray(&fos_font_md, wx[1] + 18, wy + 70, "f", 72, 0);
+
+    /* the light meter: a third of a stop every 40 px, whole stops longer, a red pointer when the meter is on */
+    const int cx = W / 2, step = 40, my = 292;
+    fill(cx - 6 * step - 4, my, 12 * step + 9, 2, p->gray[30]);
+    for (int k = -6; k <= 6; k++)
+    {
+        int whole = k % 3 == 0, x = cx + k * step, len = whole ? 20 : 10, wd = k == 0 ? 3 : 1;
+        fill(x - wd / 2, my - len, wd, len, k == 0 ? p->white : p->gray[whole ? 60 : 32]);
+        if (whole)
+        {
+            char t[6];
+            if (k == 0) snprintf(t, sizeof(t), "0"); else snprintf(t, sizeof(t), "%+d", k / 3);
+            text_gray(&fos_font_xs, x - fos_text_w(&fos_font_xs, t, 0) / 2, my + 22, t, 55, 0);
+        }
+    }
+    text_gray(&fos_font_xs, 28, my + 4, "UNDER", 40, 28);
+    text_gray(&fos_font_xs, W - 28 - fos_text_w(&fos_font_xs, "OVER", 28), my + 4, "OVER", 40, 28);
+    if (h->meter)
+    {
+        int off = h->want - h->fstop, out = off < -6 || off > 6;
+        if (off < -6) off = -6;
+        if (off > 6) off = 6;
+        if (!out || h->blink)
+            for (int r = 0; r <= 14; r++) fill(cx + off * step - (14 - r), my - 40 + r, 2 * (14 - r) + 1, 1, p->red);
+    }
+
+
+    /* the camera's other readings as chips between the meter and the bake bar; empty ones are left out */
+    {
+        char c[6][16];
+        int n = 0, low = 0;
+        if (h->mode[0]) snprintf(c[n++], sizeof(c[0]), "%s", h->mode);
+        if (h->focal > 0) snprintf(c[n++], sizeof(c[0]), "%d mm", h->focal);
+        if (h->wb[0]) snprintf(c[n++], sizeof(c[0]), "WB %s", h->wb);
+        if (h->shots_left >= 0) snprintf(c[n++], sizeof(c[0]), "%d left", h->shots_left);
+        if (h->battery >= 0) { low = n; snprintf(c[n++], sizeof(c[0]), "%d%%", h->battery); }
+        if (h->clock[0]) snprintf(c[n++], sizeof(c[0]), "%s", h->clock);
+        int total = -10, cw[6];
+        for (int i = 0; i < n; i++) { cw[i] = fos_text_w(&fos_font_sm, c[i], 0) + 28; total += cw[i] + 10; }
+        int x = (W - total) / 2;
+        for (int i = 0; i < n; i++)
+        {
+            int alert = h->battery >= 0 && h->battery <= 15 && i == low;
+            rrect(x, 338, cw[i], 30, 15, alert ? (p->alert ? p->alert : p->red) : p->gray[18]);
+            rrect(x + 1, 339, cw[i] - 2, 28, 14, p->gray[5]);
+            text_gray(&fos_font_sm, x + 14, 359, c[i], alert ? 100 : 82, 0);
+            x += cw[i] + 10;
+        }
+    }
+
+    /* the bake queue, where a film camera has its frames-left bar: a rounded red tube that fills as the picture is developed */
+    const int by = 408, bw = W - 56, bh = 16;
+    const char *state = h->status[0] ? h->status : "NOTHING TO DEVELOP";
+    text_gray(&fos_font_sm, 28, by - 8, state, h->bake_queued ? 88 : 40, 0);
+    rrect(28, by, bw, bh, 8, p->gray[18]);
+    rrect(29, by + 1, bw - 2, bh - 2, 7, p->gray[5]);
+    if (h->bake_queued)
+    {
+        int fw = bh;
+        uint8_t body = p->red, shade = p->dark_red;
+        if (h->bake_active || h->bake_paused)
+        {
+            fw = (bw - 4) * h->bake_percent / 100;
+            if (fw < bh) fw = bh;
+            if (h->bake_paused && h->blink) { body = p->gray[40]; shade = p->gray[20]; }
+        }
+        else if (h->blink) { body = p->dark_red; shade = p->dark_red; }      /* preparing the review: a small block that pulses */
+        else fw = bh * 3;
+        tube(30, by + 1, fw - 2 > bw - 4 ? bw - 4 : fw - 2, bh - 2, 7, p, body, shade);
+    }
+
+    /* the buttons */
+    const char *hint = "TRASH  Home      PLAY  Images";
+    text_gray(&fos_font_xs, W - 28 - fos_text_w(&fos_font_xs, hint, 24), H - 22, hint, 40, 24);
+    text_gray(&fos_font_xs, 28, H - 22, "B2B STUDIO", 25, 40);
+}
+
+/* the screen goes back to Canon's: transparent, so what Canon draws (or LiveView) shows */
+void fos_hud_plate_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p)
+{
+    vr = vram; vp = pitch; pal = p;
+    fill(0, 0, W, H, p->clear);
 }

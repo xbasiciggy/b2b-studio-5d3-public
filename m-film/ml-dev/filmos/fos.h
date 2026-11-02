@@ -225,6 +225,8 @@ struct fos_hud_palette
     uint8_t clear, black, white, red, dark_red;
     uint8_t gray[101];          /* percent -> index */
     uint8_t alert;              /* a warning colour that stays red whatever red/dark_red hold (0: use red) */
+    uint8_t glow[16];           /* palette entries of a smooth ramp from dark to the accent, the lit digits' glow (nglow = 0: dithered dark_red) */
+    int nglow;
 };
 
 void fos_hud_draw(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p);

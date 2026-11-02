@@ -20,6 +20,7 @@ int main(int argc, char **argv)
     struct fos_hud_palette p = { 0, 2, 1, 8, 12, { 0 } };
     if (getenv("ACCENT")) p.red = atoi(getenv("ACCENT"));
     if (getenv("ACCENT_DARK")) p.dark_red = atoi(getenv("ACCENT_DARK"));
+    if (getenv("RAMP")) { for (int k = 0; k < 12; k++) p.glow[k] = 200 + k; p.nglow = 12; p.red = p.glow[11]; p.dark_red = p.glow[8]; }
     for (int i = 0; i <= 100; i++) p.gray[i] = 38 + i * 41 / 100;
     struct fos_hud h = { 1, 1, 1, 13, 6, 15, "125", 12, 36, 0, 1, 1, "PORTRA 400", 2, 1 };
     if (argc > 1 && argv[1][0] == '0') { h.lit = 0; h.need_wind = 1; }

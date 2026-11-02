@@ -151,6 +151,7 @@ static int shooting_screen()
 {
     return (lv || !FOS_LV_ONLY) && display_idle() && !is_movie_mode();
 }
+static int plate_visible();
 
 #define DBG_STATE(what) dbg("%s: ml=%d lv=%d idle=%d movie=%d mode=%d gui=%d", what, \
                             ml_started, lv, display_idle(), is_movie_mode(), shooting_mode, CURRENT_GUI_MODE)
@@ -499,8 +500,8 @@ void fos_port_bake_status(char *out,int size){
  if(bake_paused){snprintf(out,size,"Bake paused for capture  |  %d queued",queued);return;}
  int remain=bake_eta_s();
  if(pct>=5&&remain>=0){
-  snprintf(out,size,"Bake %d%%  ~%ds left  |  %d queued",pct,remain,queued);
- }else snprintf(out,size,"Bake %d%%  estimating...  |  %d queued",pct,queued);
+  snprintf(out,size,"Bake %d%c  ~%ds left  |  %d queued",pct,'%',remain,queued);   /* not "%%": the camera's snprintf takes an argument for it, shifting every number after it */
+ }else snprintf(out,size,"Bake %d%c  estimating...  |  %d queued",pct,'%',queued);
 }
 void fos_port_bake_info(struct fos_bake_info *info){
  memset(info,0,sizeof(*info));info->remaining=-1;
@@ -601,6 +602,7 @@ static void background_bake_task(void *unused){
 static void bake_overlay(void){
  static int last,last_bar,visible,fill16;int now=get_ms_clock();
  if(ui_running||!shooting_screen()||get_halfshutter_pressed()||!job_state_ready_to_take_pic())return;
+ if(plate_visible())return;                     /* the back screen has its own bake bar and status line */
  if(now-last_bar<125)return;
  last_bar=now;
  struct fos_bake_info bi;fos_port_bake_info(&bi);

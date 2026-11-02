@@ -331,52 +331,6 @@ static void pic_icon(int x, int y, int fine, uint8_t c)
     }
 }
 
-/* a soft glow around the lit segments of a window: Canon's palette has no dim reds, so the halo is dark red dithered more thinly
- * the further from a lit pixel (6 pixels out). The window must hold nothing else red. */
-static void glow(int x0, int y0, int w, int hh)
-{
-    uint8_t *d = fos_port_alloc(w * hh);
-    if (!d) return;
-    for (int y = 0; y < hh; y++)
-        for (int x = 0; x < w; x++)
-            d[y * w + x] = vr[(y0 + y) * vp + x0 + x] == pal->red ? 0 : 99;
-    for (int y = 0; y < hh; y++)                                     /* distance to the nearest lit pixel, forward then back */
-        for (int x = 0; x < w; x++)
-        {
-            int i = y * w + x, v = d[i];
-            if (x > 0 && d[i - 1] + 1 < v) v = d[i - 1] + 1;
-            if (y > 0)
-            {
-                if (d[i - w] + 1 < v) v = d[i - w] + 1;
-                if (x > 0 && d[i - w - 1] + 1 < v) v = d[i - w - 1] + 1;
-                if (x < w - 1 && d[i - w + 1] + 1 < v) v = d[i - w + 1] + 1;
-            }
-            d[i] = (uint8_t) v;
-        }
-    for (int y = hh - 1; y >= 0; y--)
-        for (int x = w - 1; x >= 0; x--)
-        {
-            int i = y * w + x, v = d[i];
-            if (x < w - 1 && d[i + 1] + 1 < v) v = d[i + 1] + 1;
-            if (y < hh - 1)
-            {
-                if (d[i + w] + 1 < v) v = d[i + w] + 1;
-                if (x < w - 1 && d[i + w + 1] + 1 < v) v = d[i + w + 1] + 1;
-                if (x > 0 && d[i + w - 1] + 1 < v) v = d[i + w - 1] + 1;
-            }
-            d[i] = (uint8_t) v;
-        }
-    /* thinner with distance: 8, 6, 5, 3, 2 and 1 of every 16 pixels, spread by the 4 x 4 ordered dither */
-    static const uint8_t keep[7] = { 0, 8, 6, 5, 3, 2, 1 };
-    for (int y = 0; y < hh; y++)
-        for (int x = 0; x < w; x++)
-        {
-            int k = d[y * w + x], gx = x0 + x, gy = y0 + y;
-            if (k >= 1 && k <= 6 && fos_bayer[gy & 3][gx & 3] < keep[k]) vr[gy * vp + gx] = pal->dark_red;
-        }
-    fos_port_free(d);
-}
-
 void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p)
 {
     vr = vram; vp = pitch; pal = p;
@@ -412,7 +366,6 @@ void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const stru
         int dx = wx[i] + (ww - seg_width(text[i])) / 2 + (i == 1 ? 14 : 0);
         seg_text(dx, wy + (wh - DIG_H) / 2, text[i], lit);
         seg_size(30, 56, 6, 10);
-        if (lit) glow(wx[i] + 4, wy + 4, ww - 8, wh - 8);
     }
     seg_size(15, 26, 3, 6);
     text_gray(&fos_font_md, wx[1] + 18, wy + 70, "f", 72, 0);
