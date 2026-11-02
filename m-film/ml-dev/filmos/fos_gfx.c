@@ -966,7 +966,7 @@ uint8_t fos_fixed_rgb[FOS_FIXED_N][3] =
 {
     { 0, 0, 0 }, { 22, 21, 20 }, { 52, 50, 48 }, { 88, 85, 82 }, { 128, 124, 120 }, { 170, 166, 160 },
     { 210, 206, 200 }, { 244, 241, 236 }, { 236, 168, 52 }, { 150, 104, 34 }, { 214, 64, 52 }, { 60, 58, 56 },
-    { 112, 108, 104 }, { 112, 22, 28 },     /* the last is the dark red of the bake bar's shading */
+    { 46, 190, 92 }, { 112, 22, 28 },     /* the last is the dark red of the bake bar's shading */
 };
 
 /* The colour themes. RAMP_RED is rebuilt in the theme's hue (same shape as the red ramp), and the review's red and its dark

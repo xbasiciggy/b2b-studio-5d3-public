@@ -64,6 +64,7 @@ struct fos_print
 /* while a photograph is up, the overlay draws with these */
 enum { PX_BLACK = FOS_FIXED_BASE, PX_PANEL, PX_G1, PX_G2, PX_G3, PX_G4, PX_G5, PX_WHITE,
        PX_AMBER, PX_AMBER2, PX_RED, PX_LINE, PX_DIM, PX_SPARE };
+#define PX_GREEN PX_DIM                 /* the unused dim grey is now the green of a finished bake's tick */
 extern uint8_t fos_fixed_rgb[FOS_FIXED_N][3];  /* PX_RED and PX_SPARE follow the colour theme (fos_gfx_accent) */
 
 int  fos_print_load(const char *path, struct fos_print *p);     /* allocates p->px; 0 on failure */

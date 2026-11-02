@@ -18,7 +18,7 @@ struct ramp_def
 /* 254 entries in all (index 0 and 255 stay Canon's) */
 static const struct ramp_def ramp_defs[RAMP_COUNT] =
 {
-    [RAMP_GRAY]    = { 0x040303, 0,        0xFFFCF6,   0, 54 },     /* 32 of its 86 entries went to RAMP_DOTS */
+    [RAMP_GRAY]    = { 0x040303, 0,        0xFFFCF6,   0, 86 },
     [RAMP_METAL]   = { 0x050608, 0x878F98, 0xF4F7FA, 150, 22 },
     [RAMP_AMBER]   = { 0x080402, 0xF4A81C, 0xFFF2D2, 185, 24 },
     [RAMP_RED]     = { 0x080202, 0xDF262D, 0xFFD8D4, 150, 18 },
@@ -28,7 +28,6 @@ static const struct ramp_def ramp_defs[RAMP_COUNT] =
     [RAMP_VIOLET]  = { 0x040208, 0x5A2D8A, 0xE9DCF7, 120, 16 },
     [RAMP_BLUE]    = { 0x020508, 0x1E77C6, 0xD5EBFF, 150, 16 },
     [RAMP_LEADER]  = { 0x050403, 0x4C3B2E, 0xDCCAB6, 130, 22 },
-    [RAMP_DOTS]    = { 0x1E77C6, 0x5A2D8A, 0xDF262D,   0, 32 },     /* colours are rewritten by fos_gfx_dots_phase */
 };
 
 uint32_t fos_pal[256];
@@ -963,39 +962,40 @@ int fos_text_map(uint8_t *px, int pitch, int w, int h, const struct fos_font *f,
 /* the overlay's colours over a photograph (a print, or the camera's own
  * picture): black, a panel, greys up to white for text on it, the accent,
  * red, a line, and a dim grey */
-const uint8_t fos_fixed_rgb[FOS_FIXED_N][3] =
+uint8_t fos_fixed_rgb[FOS_FIXED_N][3] =
 {
     { 0, 0, 0 }, { 22, 21, 20 }, { 52, 50, 48 }, { 88, 85, 82 }, { 128, 124, 120 }, { 170, 166, 160 },
     { 210, 206, 200 }, { 244, 241, 236 }, { 236, 168, 52 }, { 150, 104, 34 }, { 214, 64, 52 }, { 60, 58, 56 },
-    { 112, 108, 104 }, { 0, 0, 0 },
+    { 46, 190, 92 }, { 112, 22, 28 },     /* the last is the dark red of the bake bar's shading */
 };
 
-/* The dot-matrix background's colours: a closed loop through blue, violet, magenta, red, orange, amber and back,
- * spread over the 32 entries of RAMP_DOTS. A static pattern of dots is drawn with these indices; rotating the
- * loop (phase) makes the pattern flow without redrawing a pixel. */
-static int dots_contour;
-void fos_gfx_dots_theme(int contour) { dots_contour = contour; }
-
-void fos_gfx_dots_phase(int phase)
+/* The colour themes. RAMP_RED is rebuilt in the theme's hue (same shape as the red ramp), and the review's red and its dark
+ * shade are the fixed palette's PX_RED and PX_SPARE. */
+static const struct ramp_def accent_ramps[3] =
 {
-    static const uint8_t dots[10][3] = {
-        { 30, 119, 198 }, { 110, 60, 200 }, { 225, 40, 130 }, { 223, 38, 45 }, { 234, 93, 30 },
-        { 244, 168, 28 }, { 234, 93, 30 }, { 223, 38, 45 }, { 225, 40, 130 }, { 110, 60, 200 } };
-    static const uint8_t rgb[6][3] = {      /* the contour's split channels: red, yellow, green, cyan, blue, magenta */
-        { 255, 40, 50 }, { 255, 200, 40 }, { 40, 230, 90 }, { 40, 200, 235 }, { 60, 90, 255 }, { 225, 60, 220 } };
-    const uint8_t (*stops)[3] = dots_contour ? rgb : dots;
-    const int ns = dots_contour ? 6 : 10;
-    const int base = ramp_base[RAMP_DOTS], n = ramp_n[RAMP_DOTS];
-    for (int i = 0; i < n; i++)
+    { 0x080202, 0xDF262D, 0xFFD8D4, 150, 18 },      /* red */
+    { 0x080402, 0xF2731A, 0xFFE0C6, 150, 18 },      /* orange */
+    { 0x020A04, 0x39FF14, 0xE2FFD9, 150, 18 },      /* neon green */
+};
+static const uint8_t accent_fixed[3][2][3] =        /* PX_RED, PX_SPARE */
+{
+    { { 214, 64, 52 },  { 112, 22, 28 } },
+    { { 242, 120, 28 }, { 124, 52, 8 } },
+    { { 57, 255, 20 },  { 16, 112, 12 } },
+};
+void fos_gfx_accent(int theme)
+{
+    if (theme < 0 || theme > 2) theme = 0;
+    const struct ramp_def *d = &accent_ramps[theme];
+    int ix = ramp_base[RAMP_RED];
+    for (int i = 0; i < d->n; i++, ix++)
     {
-        int p = (((i + phase) % n) + n) % n * ns * 256 / n;        /* position on the loop, 1/256 of a stop */
-        int k = (p >> 8) % ns, f = p & 255;
-        uint32_t c = 0;
-        for (int ch = 0; ch < 3; ch++)
-        {
-            int a = stops[k][ch], b = stops[(k + 1) % ns][ch];
-            c = c << 8 | (uint32_t) (a + (b - a) * f / 256);
-        }
-        fos_pal[base + i] = c;
+        int lv = i * 255 / (d->n - 1);
+        uint32_t c = lv <= d->mid_at ? lerp_rgb(d->lo, d->mid, lv, d->mid_at) : lerp_rgb(d->mid, d->hi, lv - d->mid_at, 255 - d->mid_at);
+        fos_pal[ix] = c;
+        luma_tab[ix] = rgb_luma(c);
+        chroma_tab[ix] = rgb_chroma(c);
     }
+    memcpy(fos_fixed_rgb[10], accent_fixed[theme][0], 3);
+    memcpy(fos_fixed_rgb[13], accent_fixed[theme][1], 3);
 }

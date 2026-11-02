@@ -384,12 +384,14 @@ static void plate_modern(const struct fos_hud *h)
     for (int y = 0; y < H; y++)
     {
         const int cov = y * 26 / H;
-        for (int x = 0; x < W; x++)
+        uint8_t row8[8];                                              /* the pattern repeats every 8 pixels: work out one period, copy it across */
+        for (int x = 0; x < 8; x++)
         {
             int v = 0;
             for (int i = 0; i < 3; i++) v |= (((y >> i) & 1) << 1 | (((x ^ y) >> i) & 1)) << (2 * (2 - i));
-            vr[y * vp + x] = v < cov ? p->dark_red : p->black;
+            row8[x] = v < cov ? p->dark_red : p->black;
         }
+        for (int x = 0; x < W; x += 8) memcpy(vr + y * vp + x, row8, 8);
     }
 
     /* the top: the look, its baked options, and the picture quality */

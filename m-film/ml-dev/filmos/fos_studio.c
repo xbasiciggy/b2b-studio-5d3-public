@@ -273,6 +273,25 @@ static const uint8_t tube_grey[BAR_H][2]={
 static const uint8_t tube_track[BAR_H][2]={
  {PX_BLACK,PX_BLACK},{PX_BLACK,PX_BLACK},{PX_PANEL,PX_PANEL},{PX_PANEL,PX_PANEL},{PX_PANEL,PX_PANEL},{PX_PANEL,PX_PANEL},
  {PX_PANEL,PX_PANEL},{PX_PANEL,PX_PANEL},{PX_PANEL,PX_PANEL},{PX_PANEL,PX_G1},{PX_G1,PX_G2},{PX_G1,PX_G1}};
+
+/* a small mark on a picture: a green disc with a tick when it is fully baked, a red disc while it still waits for its bake */
+static void badge_px(uint8_t *px,int pitch,int cx,int cy,int baked){
+ for(int dy=-12;dy<=12;dy++)for(int dx=-12;dx<=12;dx++){
+  int d2=dx*dx+dy*dy;if(d2>132)continue;
+  px[(cy+dy)*pitch+cx+dx]=d2>100?PX_BLACK:baked?PX_GREEN:PX_RED;
+ }
+ if(!baked)return;
+ for(int k=0;k<=4;k++){int x=cx-6+k*6/4,y=cy+k*5/4-1;for(int w=0;w<2;w++)px[(y+w)*pitch+x]=px[(y+w)*pitch+x+1]=PX_WHITE;}     /* the short stroke down */
+ for(int k=0;k<=8;k++){int x=cx-1+k,y=cy+4-k*8/8;for(int w=0;w<2;w++)px[(y+w)*pitch+x]=px[(y+w)*pitch+x+1]=PX_WHITE;}        /* and the long one up */
+}
+static void badge_tile(int cx,int cy,int baked){
+ fos_disc(cv,cx*8,cy*8,12*8,FC(RAMP_GRAY,0),OPAQUE);
+ fos_disc(cv,cx*8,cy*8,10*8,baked?FC(RAMP_GREEN,200):FC(RAMP_RED,215),OPAQUE);
+ if(baked){
+  fos_line(cv,(cx-5)*8,cy*8,(cx-2)*8,(cy+4)*8,2*8,FC(RAMP_GRAY,255),OPAQUE);
+  fos_line(cv,(cx-2)*8,(cy+4)*8,(cx+5)*8,(cy-4)*8,2*8,FC(RAMP_GRAY,255),OPAQUE);
+ }
+}
 static void bake_bar(const struct fos_bake_info *bi,int now){
  uint8_t *px=cv->px;int pitch=cv->pitch;
  for(int y=BAR_Y-8;y<BAR_Y+BAR_H+6;y++)memset(px+y*pitch+BAR_X+BAR_W+4,PX_BLACK,720-(BAR_X+BAR_W+4)-14);   /* backing for the number */
@@ -297,7 +316,7 @@ int gallery_update(int dt){
   if(live_mode){if(live_step(now))dirty=1;if(live_mode&&now-skel_t>=220){skel_t=now;dirty=1;}}
   if(have_picture&&now-bar_last>=(live_mode?220:125)){struct fos_bake_info bi;fos_port_bake_info(&bi);if(bi.queued||now-view_t0<2500){bar_last=now;bar_dirty=1;}}
   if(now-status_due>500){status_due=now;dirty=1;
-  int revision=fos_port_bake_revision();if(revision!=review_revision){review_revision=revision;if(!zlevel&&!live_mode)load_picture();}
+  int revision=fos_port_bake_revision();if(revision!=review_revision){review_revision=revision;if(!viewing)dirty=1;if(!zlevel&&!live_mode)load_picture();}
  }return dirty||bar_dirty;}
  if(!tiles||!total)return dirty;
  int first=selection/6*6;
@@ -342,7 +361,8 @@ void gallery_draw(void){
   else{memcpy(cv->px,picture,720*480);fos_port_photo(photo_pal,photo_n,256);if(live_mode)skeleton_over(cv->px,cv->pitch,now);
    if(zlevel){char zt[64];int fx=zoom.dw>=zoom.dh?zoom.dw*10/720:zoom.dh*10/480;snprintf(zt,sizeof(zt),"ZOOM %d.%dX   DIAL PAN   SET NEXT   MENU FIT",fx/10,fx%10);ui_photo_text(&fos_font_xs,20,22,zt,0,0);}
    else if(live_mode){char cap[40];snprintf(cap,sizeof(cap),"DEVELOPING PREVIEW  %d%%",fos_live.h?live_painted*100/fos_live.h:0);ui_photo_text(&fos_font_xs,20,22,cap,0,0);}
-   else ui_photo_text(&fos_font_xs,20,22,quick_review?"SOURCE JPEG + LUT":names[selection],0,0);}
+   else ui_photo_text(&fos_font_xs,20,22,quick_review?"SOURCE JPEG + LUT":names[selection],0,0);
+   badge_px(cv->px,cv->pitch,694,26,!fos_port_bake_pending(names[selection]));}
   if(bi.queued)bake_bar(&bi,now);
   roll_overlay(names[selection],now,bi.queued||now-view_t0<2500);
   char status[96];fos_port_bake_status(status,sizeof(status));
@@ -364,6 +384,7 @@ void gallery_draw(void){
     fos_fill(cv,x+12,y+8,TILE_W,TILE_H,C_BG);
     int a=bx<x+12?x+12:bx,b=bx+80>x1?x1:bx+80;if(b>a)fos_fill(cv,a,y+8,b-a,TILE_H,C_PANEL_HI);
    }else fos_text(cv,&fos_font_xs,x+23,y+65,"SET TO PREVIEW",C_TEXT3,OPAQUE,0);
+   badge_tile(x+216-24,y+22,!fos_port_bake_pending(names[i]));
    fos_text(cv,&fos_font_xs,x+12,y+130,names[i],active?C_TEXT:C_TEXT2,OPAQUE,0);
   }
   fos_text(cv,&fos_font_xs,32,442,"DIAL  BROWSE     SET  OPEN     MENU  HOME",C_TEXT3,OPAQUE,0);

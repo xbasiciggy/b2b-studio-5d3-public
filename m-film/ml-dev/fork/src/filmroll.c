@@ -902,7 +902,7 @@ void fos_port_sleep(int ms)
     int now = get_ms_clock();
 
     /* the Canon dialog under us times out unless poked (CONFIG_MENU_TIMEOUT_FIX) */
-    if (lv && now - ui_last_mode_poke > 2000)
+    if (ui_running && lv && now - ui_last_mode_poke > 2000)
     {
         SetGUIRequestMode(GUIMODE_ML_MENU);
         ui_last_mode_poke = now;
@@ -915,6 +915,9 @@ void fos_port_sleep(int ms)
         idle_wakeup_reset_counters(-10);
         last_wake = now;
     }
+    /* only while the film OS has the screen: the bake also sleeps through here with the back screen up, and pushing the film OS's
+     * palette then made the back screen flash between its colours and the wrong ones */
+    if (!ui_running) return;
     uint32_t probe = shamem_read(LCD_Palette[3 * PALETTE_PROBE]);
     if ((probe && probe != palette_probe) || now - ui_last_palette > 1000)
     {
@@ -1605,8 +1608,10 @@ static void plate_draw(int lit, int blink)
         if (plate_buf)
         {
             fos_hud_plate(plate_buf, 720, &h, &hud_pal);
+            /* only the rows that changed are written: a status line or a bar moving must not rewrite the whole screen (that showed as a flash) */
             for (int y = 0; y < 480; y++)
-                memcpy(vram + y * BMPPITCH, plate_buf + y * 720, 720);
+                if (memcmp(vram + y * BMPPITCH, plate_buf + y * 720, 720))
+                    memcpy(vram + y * BMPPITCH, plate_buf + y * 720, 720);
         }
         else
             fos_hud_plate(vram, BMPPITCH, &h, &hud_pal);

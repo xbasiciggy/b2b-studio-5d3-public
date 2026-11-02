@@ -238,9 +238,9 @@ int fos_bake(const char *source, const char *dest, int film)
     if(jd_prepare(&jd,input,pool,65536,&b)!=JDR_OK) goto done;
     error_text="Unsupported JPEG dimensions";
     if(jd.width<64 || jd.height<64 || jd.width>8192 || jd.height>8192) goto done;
-    /* Preserve captured resolution for every Canon Small and Medium JPEG.
-     * Large retains test6's half-size output to limit processing cost. */
-    b.scale=(unsigned)jd.width*jd.height>3840u*2560u ? 1 : 0;
+    /* Every picture is baked at the size it was shot: Large stays Large, Medium Medium, Small Small. (Large used to be halved to
+     * limit the processing time; it now costs about four times a Medium bake.) */
+    b.scale=0;
     b.width=jd.width>>b.scale;b.height=jd.height>>b.scale;
     /* The review worker already made this picture's cache from the same source and look:
      * rebuilding it here would only repeat that work. */

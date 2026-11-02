@@ -16,8 +16,107 @@ struct bake {
     void *input, *writer;
     uint8_t *strip, *lut;
     int width, height, scale, strip_y, rows, failed;
+    int grain;                          /* peak grain amplitude in levels, 0 = off */
+    struct glow *glow;                  /* halation, or 0 */
     struct fos_preview preview;
 };
+
+/* ---------------------------------------------------------------- grain and halation
+ * Both are optional and off by default. Grain is mono noise strongest in the mid tones.
+ * Halation is a warm glow around bright areas; it is measured from the review picture
+ * the quick worker already made (so it follows the graded highlights) as a small blurred
+ * map, then added to every pixel with bilinear sampling while the bake streams past. */
+#define GLOW_MAX 96
+struct glow {
+    int gw, gh, strength, top;
+    uint8_t *cell;                      /* gw x gh, 0..255 */
+    uint16_t *gx;                       /* per output column: cell << 8 | fraction */
+    int line[16][GLOW_MAX + 2];         /* the current strip's rows, blended vertically */
+};
+static const int grain_peak[4]={0,4,8,14};
+static const int glow_strength[4]={0,150,250,380};   /* x 1/256 of the glow, which is added to red and, less, to green and blue */
+static void glow_free(struct glow *g){if(g){fos_port_free(g->cell);fos_port_free(g->gx);fos_port_free(g);}}
+static void box_blur(int *v,int *tmp,int n,int step,int count,int stride,int radius){
+    /* blur `count` lines of `n` samples; sample i of line k is v[k*stride+i*step]; outside is 0 */
+    for(int k=0;k<count;k++){
+        int *p=v+k*stride;int sum=0;
+        for(int i=0;i<=radius&&i<n;i++)sum+=p[i*step];
+        for(int i=0;i<n;i++){
+            tmp[i]=sum;
+            int add=i+radius+1,sub=i-radius;
+            if(add<n)sum+=p[add*step];
+            if(sub>=0)sum-=p[sub*step];
+        }
+        for(int i=0;i<n;i++)p[i*step]=tmp[i]/(2*radius+1);
+    }
+}
+static struct glow *glow_build(const struct fos_preview *pv,int level,int width){
+    struct glow *g=fos_port_alloc_hot(sizeof(*g));if(!g)return 0;
+    memset(g,0,sizeof(*g));g->top=-1;g->strength=glow_strength[level];
+    int cs=pv->w/GLOW_MAX+1;if(cs<4)cs=4;
+    g->gw=(pv->w+cs-1)/cs;g->gh=(pv->h+cs-1)/cs;
+    int cells=g->gw*g->gh,lw=g->gw>g->gh?g->gw:g->gh;
+    int *acc=fos_port_alloc_hot((cells+lw)*sizeof(int));
+    g->cell=fos_port_alloc_hot(cells);g->gx=fos_port_alloc_hot(width*sizeof(uint16_t));
+    if(!acc||!g->cell||!g->gx){fos_port_free(acc);glow_free(g);return 0;}
+    memset(acc,0,cells*sizeof(int));
+    /* each cell starts as the brightest highlight in it (so a small light counts as fully as a large one) */
+    for(int y=0;y<pv->h;y++)for(int x=0;x<pv->w;x++){
+        const uint8_t *c=pv->pal[pv->pixels[y*pv->w+x]-1];
+        int l=(c[0]*77+c[1]*150+c[2]*29)>>8;
+        if(l>160){int h=((l-160)*655)>>8;if(h>255)h=255;int *a=&acc[(y/cs)*g->gw+x/cs];if(h*256>*a)*a=h*256;}
+    }
+    /* then it falls away with distance: a chamfer sweep takes the strongest highlight in reach, less a fixed step per cell
+     * (1.41 per diagonal step), so every light gets the same halo, round and fading to nothing */
+    const int reach=g->gw/7<4?4:g->gw/7;
+    const int step=255*256/reach,diag=step*362/256;
+    const int gw=g->gw,gh=g->gh;
+    for(int y=0;y<gh;y++)for(int x=0;x<gw;x++){
+        int i=y*gw+x,v=acc[i],t;
+        if(x>0&&(t=acc[i-1]-step)>v)v=t;
+        if(y>0){
+            if((t=acc[i-gw]-step)>v)v=t;
+            if(x>0&&(t=acc[i-gw-1]-diag)>v)v=t;
+            if(x<gw-1&&(t=acc[i-gw+1]-diag)>v)v=t;
+        }
+        acc[i]=v;
+    }
+    for(int y=gh-1;y>=0;y--)for(int x=gw-1;x>=0;x--){
+        int i=y*gw+x,v=acc[i],t;
+        if(x<gw-1&&(t=acc[i+1]-step)>v)v=t;
+        if(y<gh-1){
+            if((t=acc[i+gw]-step)>v)v=t;
+            if(x<gw-1&&(t=acc[i+gw+1]-diag)>v)v=t;
+            if(x>0&&(t=acc[i+gw-1]-diag)>v)v=t;
+        }
+        acc[i]=v;
+    }
+    box_blur(acc,acc+cells,gw,1,gh,gw,1);                 /* a little smoothing so the cells do not show */
+    box_blur(acc,acc+cells,gh,gw,gw,1,1);
+    for(int i=0;i<cells;i++){int v=acc[i]>>8;if(v<0)v=0;if(v>255)v=255;g->cell[i]=(uint8_t)(v*(v+255)/510);}   /* between straight and squared: a firm halo that still eases to nothing */
+    fos_port_free(acc);
+    for(int x=0;x<width;x++){
+        int pos=((2*x+1)*g->gw*128)/width-128,cx,f;
+        if(pos<0)pos=0;
+        cx=pos>>8;f=pos&255;
+        if(cx>=g->gw-1){cx=g->gw-1;f=0;}
+        g->gx[x]=(uint16_t)(cx<<8|f);
+    }
+    return g;
+}
+static void glow_lines(struct glow *g,int top,int height){
+    for(int k=0;k<16&&top+k<height;k++){
+        int y=top+k,pos=((2*y+1)*g->gh*128)/height-128,cy,f;
+        if(pos<0)pos=0;
+        cy=pos>>8;f=pos&255;
+        if(cy>=g->gh-1){cy=g->gh-1;f=0;}
+        const uint8_t *a=g->cell+cy*g->gw,*c=f?a+g->gw:a;
+        for(int x=0;x<g->gw;x++)g->line[k][x]=(a[x]*(256-f)+c[x]*f)>>8;
+        g->line[k][g->gw]=g->line[k][g->gw-1];
+    }
+    g->top=top;
+}
+static inline int clip255(int v){return v<0?0:v>255?255:v;}
 static size_t input(JDEC *jd, uint8_t *buf, size_t n)
 {
     struct bake *b=jd->device;
@@ -41,11 +140,28 @@ static int output(JDEC *jd, void *pixels, JRECT *r)
     const uint8_t *src=pixels;
     /* Neighbouring pixels are often identical (sky, shadows): reuse the last result. */
     unsigned last=0xFFFFFFFFu;uint8_t lastout[3]={0,0,0};
+    struct glow *g=b->glow;
+    if(g && g->top!=b->strip_y)glow_lines(g,b->strip_y,b->height);
+    unsigned noise=((unsigned)r->top*131u+(unsigned)r->left*7919u+1u)*2654435761u;
     for(int y=r->top;y<=r->bottom;y++) for(int x=r->left;x<=r->right;x++,src+=3) {
         uint8_t *dst=b->strip+((y-b->strip_y)*b->width+x)*3;
         unsigned key=src[0]|src[1]<<8|src[2]<<16;
         if(key!=last){fos_lut_pixel(b->lut,src,lastout);last=key;}
-        dst[0]=lastout[0];dst[1]=lastout[1];dst[2]=lastout[2];
+        int o0=lastout[0],o1=lastout[1],o2=lastout[2];
+        if(g){
+            const int *line=g->line[y-b->strip_y];unsigned gx=g->gx[x];
+            int add=((line[gx>>8]*(256-(gx&255))+line[(gx>>8)+1]*(gx&255))>>8)*g->strength>>8;
+            if(add){o0=clip255(o0+add);o1=clip255(o1+(add*100>>8));o2=clip255(o2+(add*30>>8));}
+        }
+        if(b->grain){
+            noise=noise*1664525u+1013904223u;
+            int t=(int)((noise>>16)&255)+(int)((noise>>24)&255)-255;
+            int l=(o0+o1*2+o2)>>2,d=l<128?128-l:l-128,w=256-(d<<1);
+            if(w<64)w=64;
+            int n=((t*b->grain>>8)*w)>>8;
+            o0=clip255(o0+n);o1=clip255(o1+n);o2=clip255(o2+n);
+        }
+        dst[0]=o0;dst[1]=o1;dst[2]=o2;
     }
     colour_ms+=fos_port_ms()-colour_start;
     b->rows=r->bottom-b->strip_y+1;
@@ -122,9 +238,9 @@ int fos_bake(const char *source, const char *dest, int film)
     if(jd_prepare(&jd,input,pool,65536,&b)!=JDR_OK) goto done;
     error_text="Unsupported JPEG dimensions";
     if(jd.width<64 || jd.height<64 || jd.width>8192 || jd.height>8192) goto done;
-    /* Preserve captured resolution for every Canon Small and Medium JPEG.
-     * Large retains test6's half-size output to limit processing cost. */
-    b.scale=(unsigned)jd.width*jd.height>3840u*2560u ? 1 : 0;
+    /* Every picture is baked at the size it was shot: Large stays Large, Medium Medium, Small Small. (Large used to be halved to
+     * limit the processing time; it now costs about four times a Medium bake.) */
+    b.scale=0;
     b.width=jd.width>>b.scale;b.height=jd.height>>b.scale;
     /* The review worker already made this picture's cache from the same source and look:
      * rebuilding it here would only repeat that work. */
@@ -149,6 +265,20 @@ int fos_bake(const char *source, const char *dest, int film)
         uint8_t px[3],o[3];int t0=fos_port_ms();unsigned v=12345u;
         for(int i=0;i<4096;i++){v=v*1664525u+1013904223u;px[0]=v>>8;px[1]=v>>16;px[2]=v>>24;fos_lut_pixel(b.lut,px,o);}
         bench_ms=fos_port_ms()-t0;
+    }
+    {   /* optional looks: the levels are read when the bake starts */
+        int gl=fos_port_get(FS_GRAIN),hl=fos_port_get(FS_HALATION);
+        if(gl<0)gl=0;
+        if(gl>3)gl=3;
+        if(hl<0)hl=0;
+        if(hl>3)hl=3;
+        b.grain=grain_peak[gl];
+        const char *note="no review picture";
+        if(hl){
+            struct fos_preview pv;int orient=0;
+            if(fos_preview_load(dest,&pv,&orient)){b.glow=glow_build(&pv,hl,b.width);fos_preview_free(&pv);note=b.glow?"ok":"out of memory";}
+        }
+        if(gl||hl){char m[96];snprintf(m,sizeof(m),"bake looks: grain %d halation %d (%s)",gl,hl,hl?note:"off");fos_port_log(m);}
     }
     resize_exif(exif,exif_len,b.width,b.height);
     struct fos_jpeg_meta meta={0}; meta.exif_blob=exif; meta.exif_length=exif_len;
@@ -191,7 +321,7 @@ done:;
     char timing[260];
     snprintf(timing,sizeof(timing),"bake timing: total=%d read=%d colour=%d encode/write=%d other(decode, pauses)=%d ms result=%d; 4096-pixel LUT bench %d ms, lut@%08x strip@%08x pool@%08x enc@%08x",fos_port_ms()-total_start,read_ms,colour_ms,encode_ms,fos_port_ms()-total_start-read_ms-colour_ms-encode_ms,result,bench_ms,(unsigned)(uintptr_t)b.lut,(unsigned)(uintptr_t)b.strip,(unsigned)(uintptr_t)pool,(unsigned)fos_jpeg_state_addr);
     fos_port_log(timing);
-    fos_preview_free(&b.preview);
+    fos_preview_free(&b.preview);glow_free(b.glow);
     fos_port_close(b.input);
     fos_port_free(pool); fos_port_free(b.strip); fos_port_free(b.lut); fos_port_free(exif);
     return result;
