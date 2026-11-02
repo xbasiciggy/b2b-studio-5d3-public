@@ -8,7 +8,7 @@ and every picture is baked in the background with a film look (a 3D colour table
 ## Try it
 
 1. You need a 5D Mark III on Canon firmware **1.2.3** that already runs [Magic Lantern](https://magiclantern.fm) (5D3.123).
-2. Download `B2B-Studio-5D3.123-beta3.zip` from the [Releases](../../releases) page.
+2. Download `B2B-Studio-5D3.123-beta4.zip` from the [Releases](../../releases) page.
 3. **Back up your card**, then follow `START-HERE.txt` in the zip (copy `autoexec.bin` and the `ML` folder to the card).
 
 It is experimental: it has been run on one camera. A bad build can stop Magic Lantern from starting; the camera works normally without the card.
@@ -21,6 +21,7 @@ Baking takes tens of seconds per picture on the camera's processor.
   a film-camera "top plate" on the back screen when LiveView is off, with an always-on light meter;
   portrait pictures turned to fill the screen in the review (System > Portrait review).
 - No logo splash.
+- Beta 4 over beta 3: a new modern back screen (raised cards, dark red gradient; the classic plate is under Viewfinder > Back screen style), the camera starts on Cold Vibes, the status line no longer fills with percent signs, the back screen no longer shows pale boxes and garbled colours after a shot, and you can change the look from the camera body: hold the button under the lens (depth-of-field preview) and turn the main dial.
 - Beta 3 over beta 2: the back-screen status line shows the right queue count and time left (it showed garbage numbers), and the bake bar is no longer drawn twice.
 - Beta 2 over beta 1: portrait review fills the screen, the back-screen meter is always on, and the back screen no longer flickers (drawn off-screen and copied across).
 

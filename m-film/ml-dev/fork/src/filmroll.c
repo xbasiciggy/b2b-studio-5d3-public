@@ -63,7 +63,7 @@ extern int ml_started;
 extern void CancelDateTimer();
 
 /* user settings */
-static CONFIG_INT("filmroll.film",      film_sel,         0);
+static CONFIG_INT("filmroll.look",      film_sel,         -1);    /* -1: not chosen yet; the first start picks Cold Vibes (see load_films) */
 static CONFIG_INT("filmroll.exp",       exp_sel,          0);
 static CONFIG_INT("filmroll.hud",       hud_enabled,      0);
 static CONFIG_INT("filmroll.focus",     focus_screen,     1);
@@ -75,6 +75,7 @@ static CONFIG_INT("filmroll.bootanim",  boot_anim,        0);
 static CONFIG_INT("filmroll.colour",   ui_theme_cfg,     0);
 static CONFIG_INT("filmroll.plate",     plate_enabled,    1);
 static CONFIG_INT("filmroll.portrait",  portrait_cfg,     1);
+static CONFIG_INT("filmroll.style",     plate_style,      1);    /* back screen: 0 classic, 1 modern (the default) */
 static CONFIG_INT("filmroll.grain",     grain_cfg,        0);
 static CONFIG_INT("filmroll.halation",  halation_cfg,     0);
 static CONFIG_INT("filmroll.debug",     debug_log,        1);
@@ -499,9 +500,13 @@ void fos_port_bake_status(char *out,int size){
  int pct=bake_total?bake_done*100/bake_total:0;
  if(bake_paused){snprintf(out,size,"Bake paused for capture  |  %d queued",queued);return;}
  int remain=bake_eta_s();
- if(pct>=5&&remain>=0){
-  snprintf(out,size,"Bake %d%c  ~%ds left  |  %d queued",pct,'%',remain,queued);   /* not "%%": the camera's snprintf takes an argument for it, shifting every number after it */
- }else snprintf(out,size,"Bake %d%c  estimating...  |  %d queued",pct,'%',queued);
+ /* the percent sign is put in by hand: neither "%%" nor "%c" with '%' came out right on the camera (the first shifted the numbers after it,
+  * the second filled the line with percent signs), so no format string below contains one */
+ int n=snprintf(out,size,"Bake %d",pct);
+ if(n<0||n+2>=size)return;
+ out[n]='%';out[n+1]=0;
+ if(pct>=5&&remain>=0) snprintf(out+n+1,size-n-1,"  ~%ds left  |  %d queued",remain,(int)queued);
+ else snprintf(out+n+1,size-n-1,"  estimating...  |  %d queued",(int)queued);
 }
 void fos_port_bake_info(struct fos_bake_info *info){
  memset(info,0,sizeof(*info));info->remaining=-1;
@@ -673,6 +678,7 @@ static int photo_mode = 0, photo_n = 0, photo_k = 256;
 static uint8_t photo_pal[FOS_PRINT_COLOURS][3];
 
 static void palette_ours_range(int first, int last);
+static int palette_is_ours;                     /* the film OS's palette (or a photo's) is in the hardware, not Canon's */
 static void palette_ours()
 {
     palette_ours_range(1, 255);
@@ -688,6 +694,7 @@ static void palette_ours_range(int first, int last)
     if ((opaque >> 24) < 2) opaque = 0x03000000;
     int white_y = (white >> 16) & 0xFF;
     if (white_y < 180) white_y = 235;
+    palette_is_ours = 1;
     for (int i = first; i < last && i < 255; i++)
     {
         uint32_t entry;
@@ -708,6 +715,7 @@ static void palette_ours_range(int first, int last)
 
 static void palette_canon()
 {
+    palette_is_ours = 0;
     for (int i = 1; i < 255; i++)
     {
         EngDrvOut(LCD_Palette[3 * i], LCD_Palette[3 * i + 2]);
@@ -1169,6 +1177,7 @@ static int *setting_var(int s)
         case FS_THEME:      return &ui_theme_cfg;
         case FS_PLATE:      return &plate_enabled;
         case FS_PORTRAIT:   return &portrait_cfg;
+        case FS_PLATE_STYLE: return &plate_style;
         case FS_GRAIN:      return &grain_cfg;
         case FS_HALATION:   return &halation_cfg;
     }
@@ -1502,6 +1511,7 @@ static void shutter_led(char *buf, int size)
 
 static void hud_draw(int lit, int blink)
 {
+    if (palette_is_ours) palette_canon();       /* the readouts use Canon's colours: after a review the photo's palette may still be in the hardware */
     struct fos_hud h;
     memset(&h, 0, sizeof(h));
     h.lit = lit;
@@ -1569,6 +1579,7 @@ static void plate_fill(struct fos_hud *h, int lit, int blink)
     h->focal = lens_info.focal_len;
     wb_text(h->wb, sizeof(h->wb));
     h->battery = GetBatteryLevel();
+    h->style = COERCE(plate_style, 0, 1);
     h->shots_left = avail_shot > 0 ? avail_shot : -1;
     fos_port_clock(h->clock, sizeof(h->clock));
 }
@@ -1578,6 +1589,7 @@ static void plate_fill(struct fos_hud *h, int lit, int blink)
 static uint8_t *plate_buf;
 static void plate_draw(int lit, int blink)
 {
+    if (palette_is_ours) palette_canon();       /* after a review the photo's palette may still be in the hardware: the plate would show in its colours */
     static const uint8_t accent[3][2] = { { COLOR_RED, COLOR_DARK_RED }, { 4, 4 }, { COLOR_GREEN2, COLOR_GREEN1 } };
     struct fos_hud h;
     plate_fill(&h, lit, blink);
@@ -1610,7 +1622,7 @@ static int plate_sig()
     plate_fill(&h, 0, 0);
     unsigned v = 2166136261u;
     const int parts[] = { pic_quality, h.bake_queued, h.bake_active, h.bake_paused, h.bake_percent, h.iso, h.focal, h.battery, h.shots_left,
-                          shooting_mode, (int) lens_info.wb_mode, (int) lens_info.kelvin, h.clock[3] * 256 + h.clock[4], h.clock[1] };
+                          shooting_mode, plate_style, (int) lens_info.wb_mode, (int) lens_info.kelvin, h.clock[3] * 256 + h.clock[4], h.clock[1] };
     for (unsigned i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) v = (v ^ (unsigned) parts[i]) * 16777619u;
     return (int) (v ^ (unsigned) h.status[0] << 3);
 }
@@ -1777,9 +1789,29 @@ static int ui_key(struct event *event, int key)
     return 0;
 }
 
+/* the button under the lens (depth-of-field preview) held with a dial: the look for the next pictures changes, shown top left on the back screen */
+static int dof_held;
+static void step_look(int dir)
+{
+    const int n = fos_nfilms;
+    if (n < 2) return;
+    film_sel = roll_film = (COERCE(film_sel, 0, n - 1) + dir + n) % n;
+    leds_until = get_ms_clock() + 2000;
+    hud_dirty = 1;
+    dbg("look stepped: %d %s", film_sel, fos_films[film_sel].name);
+}
+
 static unsigned int lv_key(unsigned int key)
 {
     if (dev_busy) return 1;
+    if (key == MODULE_KEY_PRESS_DP) { dof_held = 1; return 1; }       /* Canon still sees the button */
+    if (key == MODULE_KEY_UNPRESS_DP) { dof_held = 0; return 1; }
+    if (dof_held && shooting_screen() && !ROLL_FINISHED &&
+        (key == MODULE_KEY_WHEEL_LEFT || key == MODULE_KEY_WHEEL_RIGHT || key == MODULE_KEY_WHEEL_UP || key == MODULE_KEY_WHEEL_DOWN))
+    {
+        step_look(key == MODULE_KEY_WHEEL_RIGHT || key == MODULE_KEY_WHEEL_DOWN ? 1 : -1);
+        return 0;
+    }
     /* what used to open the Magic Lantern menu opens home instead */
     if (key == MODULE_KEY_TRASH || key == MODULE_KEY_TOUCH_2_FINGER)
     {
@@ -1928,6 +1960,17 @@ static void load_fonts()
     dbg("fonts: %d bytes, %s", size, blob ? "loaded" : "not usable");
 }
 
+/* the first start (no look chosen yet) opens on Cold Vibes; a card without it falls back to the first film */
+static void resolve_default_look()
+{
+    if (film_sel >= 0) return;
+    int pick = 0;
+    for (int i = 0; i < fos_nfilms; i++)
+        if (!strcmp(fos_films[i].key, "mh_cold")) { pick = i; break; }
+    film_sel = roll_film = pick;
+    dbg("look: first start, %s", fos_films[pick].name);
+}
+
 /* the films beyond the built-in ones, from the card; the file stays in
  * memory (the films point into it) */
 static void load_films()
@@ -1937,6 +1980,7 @@ static void load_films()
     if (!raw)
     {
         dbg("films: ML/DATA/%s not found, the built-in ones only", FOS_FILM_FILE);
+        resolve_default_look();
         return;
     }
     uint8_t *blob = malloc(size);
@@ -1951,6 +1995,7 @@ static void load_films()
     }
     fio_free(raw);
     dbg("films: %d (%d bytes, %s)", fos_nfilms, size, blob ? "loaded" : "not usable");
+    resolve_default_look();
 }
 
 /* the film OS is the camera's start screen */

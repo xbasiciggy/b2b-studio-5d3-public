@@ -87,11 +87,9 @@ static void home_bake()
     ui_to_bg(1);
     ui_status_bar("HOME");
     struct hint h[] = { { "^v", "Select" }, { "SET", "Open" }, { "PLAY", "Images" }, { "MENU", "Back to camera" } };
-    ui_hints_dark = ui_theme() == 0;ui_hints(h, 4);ui_hints_dark = 0;      /* black labels over the red gradient only */
+    ui_hints_dark = 1;ui_hints(h, 4);ui_hints_dark = 0;      /* black labels over the coloured gradient */
     film_card();
     ui_to_bg(0);
-    /* dots behind the turning canister, inside the card and clear of its text */
-    ui_theme_stamp(CARD_X + 10, CARD_Y + 36, CARD_X + CARD_W - 10, CARD_Y + 238, CARD_X + CARD_W / 2, CARD_Y + 140, 14);
 }
 
 void home_enter(int arg)
@@ -138,7 +136,6 @@ void home_key(int k)
 int home_update(int dt)
 {
     int moving = 0;
-    ui_dots_step(dt);
     home_t += dt;
     if (spring_step(&home_hl, home_sel, dt, 3.4f, 0.82f))
     {
@@ -240,12 +237,17 @@ struct item
 static const char *const wind_choices[] = { "Off", "Reminder", "Locks shutter" };
 static const char *const apkey_choices[] = { "Dial in Av", "Up / Down", "Menu only" };
 static const char *const start_choices[] = { "Off", "When no film", "Always" };
-static const char *const theme_choices[] = { "Off (red)", "Dots", "Contour" };
+static const char *const theme_choices[] = { "Red", "Orange", "Neon green" };
+static const char *const plate_style_choices[] = { "Classic", "Modern" };
+static const char *const portrait_choices[] = { "Upright", "Fill screen" };
+static const char *const effect_choices[] = { "Off", "Light", "Medium", "Strong" };
 
 static const struct item finder_items[] =
 {
     { "Viewfinder HUD", IT_TOGGLE, FS_HUD, 0, 0, "SLR-style meter needle and LED readout over LiveView." },
     { "LEDs on half-press", IT_TOGGLE, FS_LEDS, 0, 0, "Like a real SLR: the readout lights only while metering." },
+    { "Back screen", IT_TOGGLE, FS_PLATE, 0, 0, "While LiveView is off the back screen shows a film camera's top plate: shutter, aperture, frames, meter, the bake queue." },
+    { "Back screen style", IT_CHOICE, FS_PLATE_STYLE, plate_style_choices, 2, "Modern: raised cards on a dark red gradient. Classic: the seven-segment top plate." },
     { "Focusing screen", IT_TOGGLE, FS_FOCUS, 0, 0, "A split-image circle and microprism collar (decoration only)." },
     { "Wind lever", IT_CHOICE, FS_WIND, wind_choices, 3, "After each frame press SET to wind on. Locking is experimental." },
 };
@@ -263,11 +265,15 @@ static const struct item system_items[] =
     { "Start screen", IT_CHOICE, FS_STARTUP, start_choices, 3, "The film shelf when the camera turns on." },
     { "Boot animation", IT_TOGGLE, FS_BOOTANIM, 0, 0, "The aperture opening on the name at power on." },
     { "Screen colour", IT_PAGE, PAGE_SCREEN, 0, 0, "Match these colours to what you see around you." },
-    { "Theme", IT_CHOICE, FS_THEME, theme_choices, 3, "Home and Film: classic red, dot swirl or contour glow. Off: no animation." },
+    { "Portrait review", IT_CHOICE, FS_PORTRAIT, portrait_choices, 2, "Pictures shot upright: Fill screen turns them to use the whole screen (tilt your head), Upright keeps them small." },
+    { "Grain", IT_CHOICE, FS_GRAIN, effect_choices, 4, "Film grain baked into new pictures (mid tones most). The review does not show it." },
+    { "Halation", IT_CHOICE, FS_HALATION, effect_choices, 4, "A warm glow around bright areas, baked into new pictures. Slower bakes." },
+    { "Theme", IT_CHOICE, FS_THEME, theme_choices, 3, "The colour of the Home and Film menus and their accents." },
     { "PLAY shows prints only", IT_TOGGLE, FS_PLAYLOCK, 0, 0, "Canon's playback would show frames the darkroom hasn't developed." },
     { "Re-apply film settings", IT_ACTION, FA_REAPPLY, 0, 0, "After changing picture style, white balance or ISO by hand." },
     { "Canon menu", IT_ACTION, FA_CANON_MENU, 0, 0, "Leave and open the camera's own menu (format card, RAW...)." },
     { "Debug log", IT_TOGGLE, FS_DEBUG, 0, 0, "Writes ML/FILMROLL.LOG for troubleshooting." },
+    { "Self-test", IT_ACTION, FA_SELFTEST, 0, 0, "Measures memory and the bake's encode, decode and colour speed, about 20 seconds. Results go to ML/FILMROLL.LOG." },
     { "Support " FOS_NAME, IT_INFO, -3, 0, 0, "Scan the code with your phone to buy the developer a coffee." },
     { "About", IT_INFO, -2, 0, 0, FOS_NAME " " T_DOT " Barlow typeface by Jeremy Tribby (SIL OFL)" },
 };
@@ -285,9 +291,9 @@ static const struct item screen_items[] =
 
 static const struct { const char *title; const char *sub; const struct item *items; int n; } pages[] =
 {
-    { "Viewfinder", "What you see in LiveView while you shoot", finder_items, 4 },
+    { "Viewfinder", "What you see in LiveView while you shoot", finder_items, 5 },
     { "Lens", "Aperture for manual lenses", lens_items, 4 },
-    { "System", "Screen colour, theme, start up and the Canon menu", system_items, 10 },
+    { "System", "Grain, halation, screen colour, theme, start up", system_items, 14 },
     { "Screen colour", "Live: the whole film OS changes as you go", screen_items, 5 },
 };
 
@@ -452,6 +458,7 @@ void page_key(int k)
             {
                 fos_port_action(it->setting, 0, 0);
                 if (it->setting == FA_CANON_MENU) ui_leave();
+                if (it->setting == FA_SELFTEST) ui_toast("Self-test done: results are in ML/FILMROLL.LOG");
                 if (it->setting == FA_REAPPLY)
                     ui_toast(ui_roll.loaded ? "Film settings go in when you return to the camera" : "No film loaded");
             }

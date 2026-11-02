@@ -107,7 +107,11 @@ enum
     FS_FILM, FS_EXP,
     FS_SCR_STD,         /* screen colour: 0 Canon's conversion, 1 Rec.709 */
     FS_SCR_SAT, FS_SCR_WARM, FS_SCR_BRIGHT,     /* -FOS_SCR_STEPS..FOS_SCR_STEPS */
-    FS_THEME,           /* Home and Film background: 0 red gradient (no animation), 1 dots, 2 contour */
+    FS_THEME,           /* colour theme of the Home and Film menus: 0 red, 1 orange, 2 neon green */
+    FS_PORTRAIT,                /* review of a picture shot upright: 0 upright (small), 1 turned to fill the screen */
+    FS_PLATE,                   /* the back screen as a film camera's top plate while LiveView is off */
+    FS_PLATE_STYLE,             /* its look: 0 classic, 1 modern */
+    FS_GRAIN, FS_HALATION,      /* baked looks: 0 off, 1 light, 2 medium, 3 strong */
     FS_COUNT
 };
 #define FOS_SCR_STEPS 6
@@ -118,6 +122,7 @@ enum
     FA_REWIND,          /* end the roll in the camera */
     FA_REAPPLY,         /* film settings again (after changing WB by hand) */
     FA_CANON_MENU,      /* leave and open Canon's menu */
+    FA_SELFTEST,        /* measure memory and speed, write the results to the log */
     FA_BUSY,            /* a = 1: long work (developing) begins, keep the camera awake; 0: done */
 };
 
@@ -205,16 +210,33 @@ struct fos_hud
     int frame, exposures, finished, need_wind;
     int focus_screen;
     const char *film;
+    int grain, halation;        /* baked looks on (0 off, 1..3), shown beside the look's name */
+    /* the back screen (fos_hud_plate) */
+    int iso;                    /* 0 = auto */
+    int bake_queued, bake_active, bake_paused, bake_percent;
+    char status[56];            /* the bake status line, empty when nothing is waiting */
+    char mode[8], wb[12], clock[8];     /* exposure mode (M, Av...), white balance, the time: chips on the plate, empty = left out */
+    char quality[12];                   /* picture quality as ML names it: "S1", "L", "RAW+S2"; empty = left out */
+    int quality_fine;                   /* the JPEG is Fine, not Normal */
+    int focal, battery, shots_left;     /* mm (0 = unknown), percent (-1 unknown), pictures left on the card (-1 unknown) */
+    int style;                          /* the plate's look: 0 classic, 1 modern */
 };
 
 struct fos_hud_palette
 {
     uint8_t clear, black, white, red, dark_red;
     uint8_t gray[101];          /* percent -> index */
+    uint8_t alert;              /* a warning colour that stays red whatever red/dark_red hold (0: use red) */
+    uint8_t glow[16];           /* palette entries of a smooth ramp from dark to the accent, the lit digits' glow (nglow = 0: dithered dark_red) */
+    int nglow;
 };
 
 void fos_hud_draw(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p);
 void fos_hud_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p);
+/* the whole screen as a film camera's top plate (LiveView off): look, shutter, aperture, frame count, the light meter,
+ * and the bake queue. Canon's own palette, like the HUD; fos_hud_plate_clear gives the screen back. */
+void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p);
+void fos_hud_plate_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p);
 
 /* ---------------------------------------------------------------- the UI */
 

@@ -110,6 +110,7 @@ enum
     FS_THEME,           /* colour theme of the Home and Film menus: 0 red, 1 orange, 2 neon green */
     FS_PORTRAIT,                /* review of a picture shot upright: 0 upright (small), 1 turned to fill the screen */
     FS_PLATE,                   /* the back screen as a film camera's top plate while LiveView is off */
+    FS_PLATE_STYLE,             /* its look: 0 classic, 1 modern */
     FS_GRAIN, FS_HALATION,      /* baked looks: 0 off, 1 light, 2 medium, 3 strong */
     FS_COUNT
 };
@@ -218,6 +219,7 @@ struct fos_hud
     char quality[12];                   /* picture quality as ML names it: "S1", "L", "RAW+S2"; empty = left out */
     int quality_fine;                   /* the JPEG is Fine, not Normal */
     int focal, battery, shots_left;     /* mm (0 = unknown), percent (-1 unknown), pictures left on the card (-1 unknown) */
+    int style;                          /* the plate's look: 0 classic, 1 modern */
 };
 
 struct fos_hud_palette

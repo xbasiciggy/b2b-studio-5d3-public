@@ -32,7 +32,7 @@ int main(int argc, char **argv)
         h.iso = getenv("ISO") ? atoi(getenv("ISO")) : 400; h.frame = 12; h.bake_queued = 2; h.bake_active = 1; h.bake_percent = 56; h.blink = 1;
         snprintf(h.status, sizeof(h.status), "Bake 56%%  ~12s left  |  2 queued");
         snprintf(h.mode, sizeof(h.mode), "M"); snprintf(h.quality, sizeof(h.quality), getenv("Q") ? getenv("Q") : "S1"); h.quality_fine = getenv("NORMAL") ? 0 : 1; snprintf(h.wb, sizeof(h.wb), "5200K"); snprintf(h.clock, sizeof(h.clock), "14:32");
-        h.focal = 50; h.battery = 87; h.shots_left = 1240;
+        h.focal = 50; h.battery = 87; h.shots_left = 1240; h.style = getenv("STYLE") ? atoi(getenv("STYLE")) : 0;
         fos_hud_plate(ov, 960, &h, &p);
         FILE *ix = fopen("out/plate.idx", "wb");
         for (int y = 0; y < 480; y++) fwrite(ov + y * 960, 1, 720, ix);

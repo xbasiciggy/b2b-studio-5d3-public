@@ -238,6 +238,7 @@ static const char *const wind_choices[] = { "Off", "Reminder", "Locks shutter" }
 static const char *const apkey_choices[] = { "Dial in Av", "Up / Down", "Menu only" };
 static const char *const start_choices[] = { "Off", "When no film", "Always" };
 static const char *const theme_choices[] = { "Red", "Orange", "Neon green" };
+static const char *const plate_style_choices[] = { "Classic", "Modern" };
 static const char *const portrait_choices[] = { "Upright", "Fill screen" };
 static const char *const effect_choices[] = { "Off", "Light", "Medium", "Strong" };
 
@@ -246,6 +247,7 @@ static const struct item finder_items[] =
     { "Viewfinder HUD", IT_TOGGLE, FS_HUD, 0, 0, "SLR-style meter needle and LED readout over LiveView." },
     { "LEDs on half-press", IT_TOGGLE, FS_LEDS, 0, 0, "Like a real SLR: the readout lights only while metering." },
     { "Back screen", IT_TOGGLE, FS_PLATE, 0, 0, "While LiveView is off the back screen shows a film camera's top plate: shutter, aperture, frames, meter, the bake queue." },
+    { "Back screen style", IT_CHOICE, FS_PLATE_STYLE, plate_style_choices, 2, "Modern: raised cards on a dark red gradient. Classic: the seven-segment top plate." },
     { "Focusing screen", IT_TOGGLE, FS_FOCUS, 0, 0, "A split-image circle and microprism collar (decoration only)." },
     { "Wind lever", IT_CHOICE, FS_WIND, wind_choices, 3, "After each frame press SET to wind on. Locking is experimental." },
 };

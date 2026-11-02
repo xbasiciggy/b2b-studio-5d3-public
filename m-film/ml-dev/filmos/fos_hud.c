@@ -331,9 +331,179 @@ static void pic_icon(int x, int y, int fine, uint8_t c)
     }
 }
 
+
+/* ---------------------------------------------------------------- the modern plate */
+
+/* a rounded block with a vertical gradient of greys (negative = black), c0 at the top and c1 at the bottom */
+static void rgrad(int x, int y, int w, int hh, int r, int c0, int c1)
+{
+    if (r > hh / 2) r = hh / 2;
+    for (int j = 0; j < hh; j++)
+    {
+        int e = j < hh - 1 - j ? j : hh - 1 - j, in = 0;
+        if (e < r) in = r - fos_isqrt((unsigned) (r * r - (r - e) * (r - e)));
+        int c = c0 + (c1 - c0) * j / (hh > 1 ? hh - 1 : 1);
+        fill(x + in, y + j, w - 2 * in, 1, c < 0 ? pal->black : pal->gray[c > 100 ? 100 : c]);
+    }
+}
+
+/* a raised card: a shadow below, a lit rim, a gradient face and a line of light along the top edge */
+static void raised(int x, int y, int w, int hh, int r)
+{
+    rrect(x - 1, y + 4, w + 2, hh + 2, r, pal->black);
+    rrect(x, y, w, hh, r, pal->gray[50]);
+    rgrad(x + 1, y + 1, w - 2, hh - 2, r - 1, 42, 14);
+    fill(x + r, y + 1, w - 2 * r, 1, pal->gray[66]);
+    fill(x + r, y + hh - 1, w - 2 * r, 1, pal->black);
+}
+
+/* a recessed well: dark at the top, a little lighter below, a light lip along the bottom */
+static void well(int x, int y, int w, int hh, int r)
+{
+    rrect(x, y, w, hh, r, pal->black);
+    rgrad(x + 1, y + 1, w - 2, hh - 2, r - 1, -1, 12);
+    fill(x + r, y + hh, w - 2 * r, 1, pal->gray[34]);
+}
+
+/* a readout in red with a darker extrusion under it */
+static void digits_modern(int cx, int base, const char *s)
+{
+    const struct fos_font *f = &fos_font_xl;
+    const int w = fos_text_w(f, s, 0), x = cx - w / 2;
+    uint8_t edge[16], face[16];
+    for (int i = 0; i < 16; i++) { edge[i] = i < 4 ? 0 : pal->dark_red; face[i] = i < 4 ? 0 : i < 8 ? pal->dark_red : pal->red; }
+    fos_text_map(vr, vp, W, H, f, x + 2, base + 3, s, edge, 0);
+    fos_text_map(vr, vp, W, H, f, x + 1, base + 2, s, edge, 0);
+    fos_text_map(vr, vp, W, H, f, x, base, s, face, 0);
+}
+
+static void plate_modern(const struct fos_hud *h)
+{
+    const struct fos_hud_palette *p = pal;
+    /* the background: black at the top fading into dark red, a dither of the two (up to 26 of 64 pixels, an 8 x 8 ordered pattern) */
+    for (int y = 0; y < H; y++)
+    {
+        const int cov = y * 26 / H;
+        for (int x = 0; x < W; x++)
+        {
+            int v = 0;
+            for (int i = 0; i < 3; i++) v |= (((y >> i) & 1) << 1 | (((x ^ y) >> i) & 1)) << (2 * (2 - i));
+            vr[y * vp + x] = v < cov ? p->dark_red : p->black;
+        }
+    }
+
+    /* the top: the look, its baked options, and the picture quality */
+    look_badge(32, 20, h);
+    if (h->quality[0])
+    {
+        const int tw = fos_text_w(&fos_font_sm, h->quality, 16);
+        text_gray(&fos_font_sm, W - 32 - tw, 44, h->quality, 90, 16);
+        pic_icon(W - 32 - tw - 28, 29, h->quality_fine, p->gray[82]);
+    }
+
+    /* three cards: shutter, aperture, ISO */
+    static const char *const label[3] = { "SHUTTER", "APERTURE", "ISO" };
+    char text[3][12];
+    snprintf(text[0], sizeof(text[0]), "%s", h->shutter[0] ? h->shutter : "--");
+    fos_format_fstop(text[1], sizeof(text[1]), h->fstop);
+    if (h->iso > 0) snprintf(text[2], sizeof(text[2]), "%d", h->iso);
+    else snprintf(text[2], sizeof(text[2]), "Auto");
+    const int cw = 208, gap = 16, cy = 62, ch = 128;
+    for (int i = 0; i < 3; i++)
+    {
+        const int x = 32 + i * (cw + gap);
+        raised(x, cy, cw, ch, 20);
+        text_gray(&fos_font_xs, x + 18, cy + 24, label[i], 85, 28);
+        rrect(x + cw - 22, cy + 17, 6, 6, 3, p->red);                 /* the small lamp */
+        well(x + 12, cy + 36, cw - 24, ch - 48, 12);
+        digits_modern(x + cw / 2, cy + 36 + (ch - 48) / 2 + 18, text[i]);
+    }
+
+    /* the light meter in a card of its own */
+    raised(32, 208, W - 64, 64, 18);
+    well(46, 222, W - 92, 36, 10);
+    const int cx = W / 2, step = 44, my = 240;
+    for (int k = -6; k <= 6; k++)
+    {
+        int whole = k % 3 == 0, len = whole ? 14 : 7;
+        fill(cx + k * step, my - len / 2, 1, len, p->gray[whole ? 58 : 36]);
+    }
+    fill(cx - 1, my - 15, 3, 31, p->white);
+    if (h->meter)
+    {
+        int off = h->want - h->fstop, out = off < -6 || off > 6;
+        if (off < -6) off = -6;
+        if (off > 6) off = 6;
+        if (!out || h->blink)
+            for (int r = 0; r <= 12; r++) fill(cx + off * step - (12 - r), my - 9 + r, 2 * (12 - r) + 1, 1, p->red);
+    }
+
+    /* the camera's other readings as raised pills; empty ones are left out */
+    {
+        char c[6][16];
+        int n = 0, low = 0, clock = -1;
+        if (h->mode[0]) snprintf(c[n++], sizeof(c[0]), "%s", h->mode);
+        if (h->focal > 0) snprintf(c[n++], sizeof(c[0]), "%d mm", h->focal);
+        if (h->wb[0]) snprintf(c[n++], sizeof(c[0]), "WB %s", h->wb);
+        if (h->shots_left >= 0) snprintf(c[n++], sizeof(c[0]), "%d left", h->shots_left);
+        if (h->battery >= 0) { low = n; snprintf(c[n++], sizeof(c[0]), "%d%%", h->battery); }
+        if (h->clock[0]) { clock = n; snprintf(c[n++], sizeof(c[0]), "%s", h->clock); }
+        int x = 32;
+        for (int i = 0; i < n; i++)
+        {
+            const int icon = (h->battery >= 0 && i == low) || i == clock, cwid = fos_text_w(&fos_font_sm, c[i], 0) + 26 + (icon ? 18 : 0);
+            const int alert = h->battery >= 0 && h->battery <= 15 && i == low;
+            rrect(x, 297, cwid, 28, 14, p->black);
+            rrect(x, 296, cwid, 28, 14, alert ? (p->alert ? p->alert : p->red) : p->gray[44]);
+            rgrad(x + 1, 297, cwid - 2, 26, 13, 34, 16);
+            fill(x + 10, 297, cwid - 20, 1, p->gray[58]);
+            int tx = x + 13;
+            if (i == low && h->battery >= 0)
+            {
+                fill(tx, 305, 12, 1, p->gray[70]); fill(tx, 311, 12, 1, p->gray[70]); fill(tx, 305, 1, 7, p->gray[70]); fill(tx + 11, 305, 1, 7, p->gray[70]);
+                fill(tx + 12, 307, 2, 3, p->gray[70]); fill(tx + 2, 307, h->battery > 15 ? 7 : 2, 3, alert ? p->alert ? p->alert : p->red : p->red);
+                tx += 18;
+            }
+            else if (i == clock)
+            {
+                rrect(tx, 303, 11, 11, 5, p->gray[70]); rrect(tx + 1, 304, 9, 9, 4, p->gray[20]);
+                fill(tx + 5, 305, 1, 4, p->gray[70]); fill(tx + 5, 308, 3, 1, p->gray[70]);
+                tx += 18;
+            }
+            text_gray(&fos_font_sm, tx, 315, c[i], alert ? 100 : 86, 0);
+            x += cwid + 8;
+        }
+    }
+
+    /* the bake queue: its text, and a rounded tube on a plain track */
+    const int by = 384, bw = W - 64, bh = 14;
+    text_gray(&fos_font_sm, 32, 372, h->status[0] ? h->status : "NOTHING TO DEVELOP", h->bake_queued ? 90 : 45, 0);
+    rrect(32, by, bw, bh, 7, p->black);
+    rrect(33, by + 1, bw - 2, bh - 2, 6, p->gray[8]);
+    if (h->bake_queued)
+    {
+        int fw = bh;
+        uint8_t body = p->red, shade = p->dark_red;
+        if (h->bake_active || h->bake_paused)
+        {
+            fw = (bw - 4) * h->bake_percent / 100;
+            if (fw < bh) fw = bh;
+            if (h->bake_paused && h->blink) { body = p->gray[40]; shade = p->gray[20]; }
+        }
+        else if (h->blink) { body = p->dark_red; shade = p->dark_red; }
+        else fw = bh * 3;
+        tube(34, by + 1, fw - 2 > bw - 4 ? bw - 4 : fw - 2, bh - 2, 6, p, body, shade);
+    }
+
+    const char *hint = "TRASH  Home      PLAY  Images";
+    text_gray(&fos_font_xs, W - 32 - fos_text_w(&fos_font_xs, hint, 24), H - 22, hint, 45, 24);
+    text_gray(&fos_font_xs, 32, H - 22, "B2B STUDIO", 30, 40);
+}
+
 void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p)
 {
     vr = vram; vp = pitch; pal = p;
+    if (h->style == 1) { plate_modern(h); return; }
     fill(0, 0, W, H, p->black);
 
     /* the top: the look the next frame gets, and the speed of the film */
