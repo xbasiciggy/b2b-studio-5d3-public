@@ -2,6 +2,7 @@
  * memory, and runs a dispatch loop shaped like a Game Boy CPU emulator. Portable C so the host can check they run. */
 #include "fos.h"
 #include "fos_bench.h"
+#ifndef CONFIG_EOSM      /* left out of the EOS M build (its boot size limit): only the self-test uses these */
 
 unsigned fos_bench_alu(unsigned n){
  unsigned x=2463534242u,s=0;
@@ -72,3 +73,5 @@ unsigned fos_bench_gb(uint8_t *mem,int steps){
  }
  return ticks+r[0]+r[1]+r[2]+r[3]+r[7]+f+pc+sp;
 }
+
+#endif

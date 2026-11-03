@@ -47,6 +47,7 @@
 #include <vram.h>
 #include <shoot.h>
 #include <battery.h>
+extern int GetBatteryLevel() __attribute__((weak));       /* not every camera has it (the EOS M does not): then the battery is simply not shown */
 #include "filmroll.h"
 #include "fos.h"
 #include "fos_dev.h"
@@ -827,7 +828,7 @@ static void film_ui_close()
     palette_canon();
     /* back to the shooting screen: the back screen is painted BEFORE Canon is asked to leave its menu mode, and the shutter animation stays
      * closed until then. Painted afterwards, Canon's own screen showed through for a moment, with a flash of the last picture's review. */
-    const int to_plate = plate_enabled && !lv && !is_movie_mode();
+    const int to_plate = !FOS_LV_ONLY && plate_enabled && !lv && !is_movie_mode();
     if (to_plate)
     {
         canon_gui_disable_front_buffer();
@@ -1226,6 +1227,7 @@ void fos_port_set(int s, int value)
 }
 
 
+#ifndef CONFIG_EOSM
 /* System > Self-test: how much memory the camera can give us and how fast its processor runs the kinds of code we have. It runs
  * in the film OS task (the screen waits, about ten seconds) and writes the numbers to the log whether or not Debug log is on. */
 static int bench_largest(int tmp)
@@ -1387,6 +1389,9 @@ static void selftest()
     dbg("selftest: end");
     debug_log = saved;
 }
+#else
+static void selftest() { }            /* left out of the EOS M build: it must stay under the camera's boot size limit */
+#endif
 
 void fos_port_action(int action, int a, int b)
 {
@@ -1491,7 +1496,7 @@ static int plate_visible()
 {
     /* DISPLAY_IS_ON is not asked: it reads 0 whenever the camera's own screen is switched off (and while Canon's idle screen is up), and the
      * back screen is drawn regardless */
-    return plate_enabled && !lv && display_idle() && !is_movie_mode() && !ui_running;
+    return !FOS_LV_ONLY && plate_enabled && !lv && display_idle() && !is_movie_mode() && !ui_running;      /* never on a LiveView-only camera */
 }
 
 static int hud_visible()
@@ -1631,7 +1636,7 @@ static void plate_fill(struct fos_hud *h, int lit, int blink)
     }
     h->focal = lens_info.focal_len;
     wb_text(h->wb, sizeof(h->wb));
-    h->battery = GetBatteryLevel();
+    h->battery = GetBatteryLevel ? GetBatteryLevel() : -1;
     h->style = COERCE(plate_style, 0, 1);
     h->shots_left = avail_shot > 0 ? avail_shot : -1;
     fos_port_clock(h->clock, sizeof(h->clock));

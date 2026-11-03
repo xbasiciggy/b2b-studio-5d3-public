@@ -169,6 +169,7 @@ static void look_badge(int bx, int by, const struct fos_hud *h)
 
 /* ---------------------------------------------------------------- the HUD */
 
+#ifndef CONFIG_EOSM
 void fos_hud_draw(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p)
 {
     vr = vram; vp = pitch; pal = p;
@@ -274,6 +275,10 @@ void fos_hud_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p)
     fill(0, VIEW_H, W, BAR_H, p->clear);
     fill(VIEW_W / 2 - 64, VIEW_H / 2 - 64, 129, 129, p->clear);
 }
+#else   /* the EOS M build leaves the older LiveView strip out to stay under the camera's boot size limit: the modern LiveView screen is used */
+void fos_hud_draw(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p) { (void) vram; (void) pitch; (void) h; (void) p; }
+void fos_hud_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p) { (void) vram; (void) pitch; (void) p; }
+#endif
 
 /* ---------------------------------------------------------------- the back screen */
 
@@ -452,6 +457,7 @@ void fos_hud_lv(uint8_t *vram, int pitch, const struct fos_hud *h, const struct 
     }
 }
 
+#ifndef CONFIG_EOSM
 static void plate_modern(const struct fos_hud *h)
 {
     const struct fos_hud_palette *p = pal;
@@ -723,3 +729,7 @@ void fos_hud_plate_clear(uint8_t *vram, int pitch, const struct fos_hud_palette 
     vr = vram; vp = pitch; pal = p;
     fill(0, 0, W, H, p->clear);
 }
+#else   /* a LiveView-only camera (the EOS M) has no shooting screen with LiveView off: the plate is left out to save room at boot */
+void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p) { (void) vram; (void) pitch; (void) h; (void) p; }
+void fos_hud_plate_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p) { (void) vram; (void) pitch; (void) p; }
+#endif

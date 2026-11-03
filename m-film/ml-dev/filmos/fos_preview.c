@@ -7,7 +7,9 @@
  * far more than the fixed 6x6x6 cube and 4x4 ordered dither of BVP2. */
 #include "fos.h"
 #include "fos_preview.h"
+#ifndef CONFIG_EOSM    /* the EOS M build stays at -Os: it has to fit under that camera's boot size limit */
 #pragma GCC optimize ("O2")   /* the pixel loops: the camera build is -Os, which left them at about 240 cycles a pixel */
+#endif
 /* working memory that is read and written per pixel comes from the ordinary cached heap (the port's fos_port_alloc_hot) */
 __attribute__((weak)) void *fos_port_alloc_hot(int size){return fos_port_alloc(size);}
 static void path_for(char *out,int size,const char *jpeg){

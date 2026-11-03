@@ -14,6 +14,10 @@ and every picture is baked in the background with a film look (a 3D colour table
 It is experimental: it has been run on one camera. A bad build can stop Magic Lantern from starting; the camera works normally without the card.
 Baking takes tens of seconds per picture on the camera's processor.
 
+## Other cameras: testers wanted
+
+B2B Studio was made and tried on the **Canon EOS 5D Mark III** only. Test builds also exist for the **Canon EOS M (firmware 2.0.2)** and the **Canon EOS 6D (firmware 1.1.6)**. They build and fit the cameras' boot size limits, but **have not been run on a camera yet**: a bad build can hang the camera until you take the card out, and you may be the first to try. If you have one of these cameras and Magic Lantern already runs on it, see the [test release](../../releases) and tell us what happens with the [test report form](../../issues/new?template=camera-test-report.md).
+
 ## What is in this release
 
 - 72 film looks from the M-Film project, plus **Cold Vibes**.
