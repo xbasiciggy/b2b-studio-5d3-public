@@ -396,6 +396,40 @@ __attribute__((weak)) void fos_port_bake_info(struct fos_bake_info *info){
  memset(info,0,sizeof(*info));info->remaining=-1;
 }
 static int bake_status_dirty,bake_status_last;
+/* ---- the look list (M-Fn on the back screen): names only, chosen with the joystick or the dial, each step takes effect at once */
+static int looks_sel,looks_dirty;
+void looks_enter(int arg){
+ (void)arg;looks_sel=fos_port_get(FS_FILM);
+ if(looks_sel<0||looks_sel>=fos_nfilms)looks_sel=0;
+ looks_dirty=1;
+}
+static void looks_apply(void){fos_port_action(FA_LOAD,looks_sel,0);}
+void looks_key(int k){
+ const int n=fos_nfilms;if(n<1)return;
+ if(k==FK_LEFT||k==FK_UP||k==FK_WHEEL_L){looks_sel=(looks_sel+n-1)%n;looks_apply();looks_dirty=1;return;}
+ if(k==FK_RIGHT||k==FK_DOWN||k==FK_WHEEL_R){looks_sel=(looks_sel+1)%n;looks_apply();looks_dirty=1;return;}
+ if(k==FK_SET||k==FK_MENU||k==FK_HOME||k==FK_PLAY)ui_leave();
+}
+int looks_update(int dt){(void)dt;return looks_dirty||ui_clobbered;}
+void looks_draw(void){
+ if(!looks_dirty&&!ui_clobbered)return;
+ looks_dirty=ui_clobbered=0;
+ const int n=fos_nfilms;
+ fos_fill(cv,0,0,720,480,C_BG);
+ fos_text(cv,&fos_font_lg,32,65,"Look",C_TEXT,OPAQUE,0);
+ char counter[16];snprintf(counter,sizeof(counter),"%d / %d",looks_sel+1,n);
+ fos_text_r(cv,&fos_font_sm,688,62,counter,C_TEXT3,OPAQUE,0);
+ for(int r=-4;r<=4;r++){
+  const int i=((looks_sel+r)%n+n)%n,y=118+(r+4)*32;
+  const struct fos_film *f=&fos_films[i];
+  char text[48];snprintf(text,sizeof(text),"%s%s%s",f->brand,f->brand[0]?" ":"",f->name);
+  if(r==0){fos_rrect(cv,24,y-23,672,32,16,C_ACCENT,OPAQUE);fos_text(cv,&fos_font_md,44,y,text,C_TEXT,OPAQUE,0);}
+  else fos_text(cv,&fos_font_md,44,y,text,r==-1||r==1?C_TEXT2:C_TEXT3,OPAQUE,0);
+ }
+ fos_text(cv,&fos_font_xs,32,442,"JOYSTICK OR DIAL  CHOOSE     SET  DONE",C_TEXT3,OPAQUE,0);
+ ui_damage_all();
+}
+
 void bake_status_enter(int arg){
  (void)arg;bake_status_dirty=1;bake_status_last=fos_port_ms();
  for(int y=0;y<FOS_H;y++)for(int x=0;x<FOS_W;x++)

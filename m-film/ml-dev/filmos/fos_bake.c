@@ -34,7 +34,7 @@ struct glow {
     int line[16][GLOW_MAX + 2];         /* the current strip's rows, blended vertically */
 };
 static const int grain_peak[4]={0,4,8,14};
-static const int glow_strength[4]={0,150,250,380};   /* x 1/256 of the glow, which is added to red and, less, to green and blue */
+static const int glow_strength[4]={0,80,150,220};   /* x 1/256 of the glow, which is added to red and, less, to green and blue */
 static void glow_free(struct glow *g){if(g){fos_port_free(g->cell);fos_port_free(g->gx);fos_port_free(g);}}
 static void box_blur(int *v,int *tmp,int n,int step,int count,int stride,int radius){
     /* blur `count` lines of `n` samples; sample i of line k is v[k*stride+i*step]; outside is 0 */
@@ -151,7 +151,7 @@ static int output(JDEC *jd, void *pixels, JRECT *r)
         if(g){
             const int *line=g->line[y-b->strip_y];unsigned gx=g->gx[x];
             int add=((line[gx>>8]*(256-(gx&255))+line[(gx>>8)+1]*(gx&255))>>8)*g->strength>>8;
-            if(add){o0=clip255(o0+add);o1=clip255(o1+(add*100>>8));o2=clip255(o2+(add*30>>8));}
+            if(add){o0=clip255(o0+add);o1=clip255(o1+(add*88>>8));o2=clip255(o2+(add*26>>8));}
         }
         if(b->grain){
             noise=noise*1664525u+1013904223u;
@@ -273,6 +273,9 @@ int fos_bake(const char *source, const char *dest, int film)
         if(hl<0)hl=0;
         if(hl>3)hl=3;
         b.grain=grain_peak[gl];
+        /* the review cache is rebuilt from the baked rows whenever grain or halation is on: the one the review worker made came from
+         * the source and the look only, so the review of a baked picture never showed them */
+        if((gl||hl)&&!b.preview.pixels){fos_preview_init(&b.preview,b.width,b.height);b.preview.taken=fos_exif_taken(exif,exif_len);}
         const char *note="no review picture";
         if(hl){
             struct fos_preview pv;int orient=0;

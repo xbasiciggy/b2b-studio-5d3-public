@@ -502,10 +502,33 @@ static void plate_modern(const struct fos_hud *h)
     text_gray(&fos_font_xs, 32, H - 22, "B2B STUDIO", 30, 40);
 }
 
+
+/* the look menu over the plate: a column of names with the chosen one marked; the dial moves it */
+static void plate_menu(const struct fos_hud *h)
+{
+    if (h->menu_n < 1) return;
+    const struct fos_hud_palette *p = pal;
+    const int x = 150, y = 58, w = 420, rows = h->menu_n > 9 ? 9 : h->menu_n, ph = 74 + rows * 34;
+    rrect(x - 2, y + 4, w + 4, ph, 20, p->black);
+    rrect(x, y, w, ph, 20, p->gray[50]);
+    rrect(x + 1, y + 1, w - 2, ph - 2, 19, p->gray[10]);
+    text_gray(&fos_font_xs, x + 24, y + 30, "LOOK", 85, 28);
+    const char *hint = "DIAL  CHOOSE     SET  DONE";
+    text_gray(&fos_font_xs, x + w - 24 - fos_text_w(&fos_font_xs, hint, 20), y + 30, hint, 50, 20);
+    fill(x + 20, y + 42, w - 40, 1, p->gray[28]);
+    for (int r = 0; r < rows; r++)
+    {
+        const int ry = y + 52 + r * 34, d = r > h->menu_row ? r - h->menu_row : h->menu_row - r;
+        if (r == h->menu_row) rrect(x + 14, ry, w - 28, 30, 15, p->red);
+        const char *n = h->menu_name[r] ? h->menu_name[r] : "";
+        text_gray(&fos_font_md, x + 32, ry + 22, n, r == h->menu_row ? 100 : d == 1 ? 78 : 55, 0);
+    }
+}
+
 void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p)
 {
     vr = vram; vp = pitch; pal = p;
-    if (h->style == 1) { plate_modern(h); return; }
+    if (h->style == 1) { plate_modern(h); plate_menu(h); return; }
     fill(0, 0, W, H, p->black);
 
     /* the top: the look the next frame gets, and the speed of the film */
@@ -616,6 +639,7 @@ void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const stru
     const char *hint = "TRASH  Home      PLAY  Images";
     text_gray(&fos_font_xs, W - 28 - fos_text_w(&fos_font_xs, hint, 24), H - 22, hint, 40, 24);
     text_gray(&fos_font_xs, 28, H - 22, "B2B STUDIO", 25, 40);
+    plate_menu(h);
 }
 
 /* the screen goes back to Canon's: transparent, so what Canon draws (or LiveView) shows */

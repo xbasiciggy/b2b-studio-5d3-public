@@ -70,10 +70,11 @@ static CONFIG_INT("filmroll.focus",     focus_screen,     1);
 static CONFIG_INT("filmroll.leds",      leds_on_half,     1);
 static CONFIG_INT("filmroll.wind",      wind_mode,        0);   /* 0 off, 1 reminder, 2 block shutter */
 static CONFIG_INT("filmroll.playlock",  play_lock,        0);
-static CONFIG_INT("filmroll.startup",   startup_picker,   2);   /* 0 off, 1 when no film, 2 always */
+static CONFIG_INT("filmroll.startup3",  startup_picker,   0);   /* 0 off (the back screen comes first), 1 when no film, 2 always; a new key so the old default of 2 is not kept */
 static CONFIG_INT("filmroll.bootanim",  boot_anim,        0);
 static CONFIG_INT("filmroll.colour",   ui_theme_cfg,     0);
 static CONFIG_INT("filmroll.plate",     plate_enabled,    1);
+static CONFIG_INT("filmroll.lvui",      lvui_enabled,     1);    /* the modern LiveView screen (cards over the picture), with the modern style */
 static CONFIG_INT("filmroll.portrait",  portrait_cfg,     1);
 static CONFIG_INT("filmroll.style",     plate_style,      1);    /* back screen: 0 classic, 1 modern (the default) */
 static CONFIG_INT("filmroll.grain",     grain_cfg,        0);
@@ -153,6 +154,8 @@ static int shooting_screen()
     return (lv || !FOS_LV_ONLY) && display_idle() && !is_movie_mode();
 }
 static int plate_visible();
+static int lvui_visible();
+static void plate_draw(int lit, int blink);
 
 #define DBG_STATE(what) dbg("%s: ml=%d lv=%d idle=%d movie=%d mode=%d gui=%d", what, \
                             ml_started, lv, display_idle(), is_movie_mode(), shooting_mode, CURRENT_GUI_MODE)
@@ -607,7 +610,7 @@ static void background_bake_task(void *unused){
 static void bake_overlay(void){
  static int last,last_bar,visible,fill16;int now=get_ms_clock();
  if(ui_running||!shooting_screen()||get_halfshutter_pressed()||!job_state_ready_to_take_pic())return;
- if(plate_visible())return;                     /* the back screen has its own bake bar and status line */
+ if(plate_visible()||lvui_visible())return;                     /* the back screen has its own bake bar and status line */
  if(now-last_bar<125)return;
  last_bar=now;
  struct fos_bake_info bi;fos_port_bake_info(&bi);
@@ -818,16 +821,30 @@ static void film_ui_open(int open)
     dbg("open %d: cover %d, switch %d ms, layer on %d ms, total %d ms", open, covered, t1 - t0, t2 - t1, ui_last_mode_poke - t0);
 }
 
+static int canon_held;                          /* Canon's own screen is being kept from drawing (the back screen or LiveView screen is up) */
 static void film_ui_close()
 {
     palette_canon();
+    /* back to the shooting screen: the back screen is painted BEFORE Canon is asked to leave its menu mode, and the shutter animation stays
+     * closed until then. Painted afterwards, Canon's own screen showed through for a moment, with a flash of the last picture's review. */
+    const int to_plate = plate_enabled && !lv && !is_movie_mode();
+    if (to_plate)
+    {
+        canon_gui_disable_front_buffer();
+        canon_held = 1;
+        hud_dirty = 1;
+        plate_draw(1, 0);
+    }
     if (lv) bmp_off();
     SetGUIRequestMode(0);
     msleep(100);
-    canon_gui_enable_front_buffer(0);
-    clrscr();
-    redraw();
-    if (lv) bmp_on();
+    if (!to_plate)
+    {
+        canon_gui_enable_front_buffer(0);
+        clrscr();
+        redraw();
+        if (lv) bmp_on();
+    }
 }
 
 /* frame times are kept while the film OS runs and logged when it closes:
@@ -1181,6 +1198,7 @@ static int *setting_var(int s)
         case FS_PLATE:      return &plate_enabled;
         case FS_PORTRAIT:   return &portrait_cfg;
         case FS_PLATE_STYLE: return &plate_style;
+        case FS_LVUI:       return &lvui_enabled;
         case FS_GRAIN:      return &grain_cfg;
         case FS_HALATION:   return &halation_cfg;
     }
@@ -1465,9 +1483,15 @@ void fos_port_stat(const struct fos_stat *s)
 static volatile int hud_showing = 0;    /* HUD drawn on the LiveView screen */
 
 /* the back screen as a top plate: LiveView off, nothing else of ours on screen (and Canon's own screens left alone) */
+static int lvui_visible()
+{
+    return lvui_enabled && plate_style == 1 && lv && display_idle() && !is_movie_mode() && !ui_running;
+}
 static int plate_visible()
 {
-    return plate_enabled && !lv && DISPLAY_IS_ON && display_idle() && !is_movie_mode() && !ui_running;
+    /* DISPLAY_IS_ON is not asked: it reads 0 whenever the camera's own screen is switched off (and while Canon's idle screen is up), and the
+     * back screen is drawn regardless */
+    return plate_enabled && !lv && display_idle() && !is_movie_mode() && !ui_running;
 }
 
 static int hud_visible()
@@ -1550,9 +1574,35 @@ static const char *wb_text(char *buf, int size)
     return buf;
 }
 
+/* the look menu (the lens button): 9 rows around the chosen look */
+static int look_menu_open, look_menu_until;
+static int lens_button_ms;                      /* when the lens button last sent its events (0 = not recently) */
+static void next_look_in_category();
+static int mfn_pending_ms, last_key_ms;
+static int plate_fast_until;                    /* after a button, the back screen is repaired every 60 ms for a while: Canon redraws its own screen then */
+static int exp_sig_last, exp_change_ms, dof_last, dof_change_ms;   /* the dial's mark; and the depth-of-field button's (the lens button) */        /* when the shutter, aperture, ISO or exposure compensation last changed: the dial's mark */         /* an "other button" event waiting to be told from the dial's own noise (see handle_filmroll_keys) */
+static char look_menu_text[9][40];
 static void plate_fill(struct fos_hud *h, int lit, int blink)
 {
     memset(h, 0, sizeof(*h));
+    if (look_menu_open && fos_nfilms > 0)
+    {
+        /* the looks of the current category, up to nine around the chosen one */
+        const int n = fos_nfilms, cur = COERCE(film_sel, 0, n - 1), group = fos_films[cur].group;
+        int idx[256], count = 0, pos = 0;
+        for (int i = 0; i < n && count < 256; i++)
+            if (fos_films[i].group == group) { if (i == cur) pos = count; idx[count++] = i; }
+        const int rows = count < 9 ? count : 9, first = count < 9 ? 0 : -4;
+        for (int r = 0; r < rows; r++)
+        {
+            const struct fos_film *f = &fos_films[idx[((pos + first + r) % count + count) % count]];
+            snprintf(look_menu_text[r], sizeof(look_menu_text[r]), "%s%s%s", f->brand, f->brand[0] ? " " : "", f->name);
+            h->menu_name[r] = look_menu_text[r];
+        }
+        h->menu_n = rows;
+        h->menu_row = count < 9 ? pos : 4;
+        h->menu_title = fos_group_names[COERCE(group, 0, FOS_NGROUPS - 1)];
+    }
     h->lit = 1;                                 /* the plate's readouts are always lit; `lit` (half-press) only turns the meter on */
     h->blink = blink;
     h->fstop = current_fstop();
@@ -1590,7 +1640,7 @@ static void plate_fill(struct fos_hud *h, int lit, int blink)
 /* the plate's accent follows the colour theme, from Canon's own palette entries (red; its burnt orange, entry 4; green): Canon's
  * palette has nothing brighter, and the LiveView HUD stays red */
 static uint8_t *plate_buf;
-static void plate_draw(int lit, int blink)
+static void plate_draw_ex(int lit, int blink, int lvmode)
 {
     if (palette_is_ours) palette_canon();       /* after a review the photo's palette may still be in the hardware: the plate would show in its colours */
     static const uint8_t accent[3][2] = { { COLOR_RED, COLOR_DARK_RED }, { 4, 4 }, { COLOR_GREEN2, COLOR_GREEN1 } };
@@ -1607,18 +1657,19 @@ static void plate_draw(int lit, int blink)
         if (!plate_buf) plate_buf = fos_port_alloc_hot(720 * 480);
         if (plate_buf)
         {
-            fos_hud_plate(plate_buf, 720, &h, &hud_pal);
+            if (lvmode) fos_hud_lv(plate_buf, 720, &h, &hud_pal); else fos_hud_plate(plate_buf, 720, &h, &hud_pal);
             /* only the rows that changed are written: a status line or a bar moving must not rewrite the whole screen (that showed as a flash) */
             for (int y = 0; y < 480; y++)
                 if (memcmp(vram + y * BMPPITCH, plate_buf + y * 720, 720))
                     memcpy(vram + y * BMPPITCH, plate_buf + y * 720, 720);
         }
-        else
-            fos_hud_plate(vram, BMPPITCH, &h, &hud_pal);
+        else if (lvmode) fos_hud_lv(vram, BMPPITCH, &h, &hud_pal);
+        else fos_hud_plate(vram, BMPPITCH, &h, &hud_pal);
     }
     hud_pal.red = COLOR_RED;
     hud_pal.dark_red = COLOR_DARK_RED;
 }
+static void plate_draw(int lit, int blink) { plate_draw_ex(lit, blink, 0); }
 
 /* what the plate shows that the main signature does not cover, as one number (redraw when it changes) */
 static int plate_sig()
@@ -1627,7 +1678,7 @@ static int plate_sig()
     plate_fill(&h, 0, 0);
     unsigned v = 2166136261u;
     const int parts[] = { pic_quality, h.bake_queued, h.bake_active, h.bake_paused, h.bake_percent, h.iso, h.focal, h.battery, h.shots_left,
-                          shooting_mode, plate_style, (int) lens_info.wb_mode, (int) lens_info.kelvin, h.clock[3] * 256 + h.clock[4], h.clock[1] };
+                          shooting_mode, plate_style, look_menu_open, film_sel, (int) lens_info.wb_mode, (int) lens_info.kelvin, h.clock[3] * 256 + h.clock[4], h.clock[1] };
     for (unsigned i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) v = (v ^ (unsigned) parts[i]) * 16777619u;
     return (int) (v ^ (unsigned) h.status[0] << 3);
 }
@@ -1656,20 +1707,68 @@ static int bake_queued_now(void)
     return bi.queued;
 }
 
+/* Canon clears its "do not repaint the screen" flag now and then (its own redraws of the shooting screen do), and then paints its stock shooting
+ * screen over ours until our next repair: the random flashing. Checked every 50 ms: the flag is set again and the screen painted at once. */
+static void plate_guard()
+{
+    if (!canon_held || ui_running) return;
+    const int plate = plate_visible(), lvui = !plate && lvui_visible();
+    if (!plate && !lvui) return;
+    if (canon_gui_front_buffer_disabled()) return;
+    static int logged;
+    if (logged < 60) { logged++; dbg("Canon let go of its screen: taken back (back screen %d, LiveView screen %d)", plate, lvui); }
+    canon_gui_disable_front_buffer();
+    plate_fast_until = get_ms_clock() + 800;
+    hud_dirty = 1;
+    if (plate) plate_draw(1, 0); else plate_draw_ex(1, 0, 1);
+}
+
 static void hud_step()
 {
+    if (lens_button_ms)
+    {
+        const int t = get_ms_clock();
+        static int wake_try;
+        if (t - lens_button_ms > 4000) lens_button_ms = 0;
+        else if (!lv && !ui_running && !DISPLAY_IS_ON && t - wake_try > 600) { wake_try = t; display_on(); dbg("screen was off after the lens button: turned on"); }
+    }
+    {   /* the lens button is the depth-of-field button: it changes Canon's depth-of-field property, and M-Fn does not */
+        const int d = dofpreview;
+        if (d != dof_last) { dof_last = d; dof_change_ms = get_ms_clock(); }
+    }
+    {   /* the dial changes the exposure settings; M-Fn does not. Note when they last changed. */
+        const int sig = lens_info.raw_shutter * 65536 + lens_info.raw_aperture * 256 + lens_info.raw_iso + get_ae_value() * 7919;
+        if (sig != exp_sig_last) { exp_sig_last = sig; exp_change_ms = get_ms_clock(); }
+    }
+    if (mfn_pending_ms && get_ms_clock() - mfn_pending_ms >= 300)
+    {
+        const int dial = exp_change_ms && ABS(exp_change_ms - mfn_pending_ms) < 700;
+        if (dial) { mfn_pending_ms = 0; dbg("other-button event dropped: the exposure settings changed %d ms from it (the dial)", exp_change_ms - mfn_pending_ms); }
+    }
+    if (mfn_pending_ms && get_ms_clock() - mfn_pending_ms >= 300)
+    {
+        /* M-Fn and the lens button send the same event and nothing else tells them apart (the log shows no other event and no change of
+         * the depth-of-field property), so either one opens the look list: a full film OS screen, where the joystick, the dial and SET
+         * are delivered like anywhere in the film OS */
+        mfn_pending_ms = 0;
+        if (plate_visible()) { dbg("look list: opening (the button under the lens, or M-Fn)"); open_ui(FOS_OPEN_LOOKS); }
+    }
+    if (look_menu_open && get_ms_clock() > look_menu_until) { look_menu_open = 0; hud_dirty = 1; dbg("look menu closed (idle)"); }
+    if (look_menu_open && !plate_visible()) { look_menu_open = 0; hud_dirty = 1; dbg("look menu closed (back screen left: lv %d idle %d ui %d)", lv, display_idle(), ui_running); }
     static int last_sig = -1, last_sig2 = -1;
     static int last_draw = 0;
     static int drawn = 0;
     static int was_visible = -1;
-    static int plate_drawn = 0, canon_held = 0, gone_since = 0;
+    static int plate_drawn = 0, gone_since = 0;
 
-    const int plate = plate_visible();
-    int visible = plate || hud_visible();
+    const int plate = plate_visible(), lvui = lvui_visible();
+    static int was_lvui = 0;
+    if (lvui != was_lvui) { was_lvui = lvui; hud_dirty = 1; }
+    int visible = plate || lvui || hud_visible();
     if (visible != was_visible)
     {
-        dbg("hud: visible %d plate %d (enabled %d roll %d lv %d movie %d ui %d)",
-            visible, plate, hud_enabled, roll_loaded, lv, is_movie_mode(), ui_running);
+        dbg("hud: visible %d plate %d (enabled %d roll %d lv %d movie %d ui %d idle %d display %d)",
+            visible, plate, hud_enabled, roll_loaded, lv, is_movie_mode(), ui_running, display_idle(), DISPLAY_IS_ON);
         was_visible = visible;
     }
     hud_showing = visible;
@@ -1678,7 +1777,7 @@ static void hud_step()
      * some time after (the way M-Film does it) */
     {
         const int tnow = get_ms_clock();
-        if (plate && !canon_held)
+        if ((plate || lvui) && !canon_held)          /* in LiveView too: Canon's own overlay drew over ours now and then */
         {
             canon_gui_disable_front_buffer();
             clrscr();
@@ -1686,15 +1785,15 @@ static void hud_step()
             hud_dirty = 1;
             gone_since = 0;
         }
-        else if (!plate && canon_held)
+        else if (!plate && !lvui && canon_held)
         {
             if (ui_running) { canon_held = 0; gone_since = 0; }                         /* the film OS has taken the screen itself */
             else if (!gone_since) gone_since = tnow;
-            else if (tnow - gone_since > 700) { canon_gui_enable_front_buffer(1); canon_held = 0; gone_since = 0; }
+            else if (tnow - gone_since > 3000) { canon_gui_enable_front_buffer(1); canon_held = 0; gone_since = 0; }      /* 3 s, not 0.7: a short gap (Canon changing state) must not hand Canon its screen back, it showed as its shooting screen glitching in */
         }
         else gone_since = 0;
     }
-    if (plate_drawn && !plate && display_idle() && !ui_running)
+    if (plate_drawn && !plate && !lvui && display_idle() && !ui_running)
     {
         plate_clear();
         plate_drawn = 0;
@@ -1717,22 +1816,23 @@ static void hud_step()
     int now = get_ms_clock();
     int lit = !leds_on_half || get_halfshutter_pressed() || now < leds_until;
     int blink = (now / 400) % 2;
-    if (plate && !bake_queued_now()) blink = 0;           /* nothing on the plate pulses unless a bake is waiting */
-    int ev8 = (lit || plate) ? get_ae_value() : 0;
-    if (plate) ev8 = (ev8 * 3 + (ev8 >= 0 ? 4 : -4)) / 8;        /* the plate only needs the pointer's third of a stop: redraw when that moves, not on every tiny reading */
+    if ((plate || lvui) && !bake_queued_now()) blink = 0;           /* nothing on the plate pulses unless a bake is waiting */
+    int ev8 = (lit || plate || lvui) ? get_ae_value() : 0;
+    if (plate || lvui) ev8 = (ev8 * 3 + (ev8 >= 0 ? 4 : -4)) / 8;        /* the plate only needs the pointer's third of a stop: redraw when that moves, not on every tiny reading */
 
     int sig = lit | blink << 1 | need_wind << 2 | (frames_shot & 0xFF) << 3
             | lens_info.raw_shutter << 11 | (ev8 & 0xFF) << 19 | (current_fstop() & 0x1F) << 27;
 
     /* redraw on change, and every second to win over Canon's overlays */
-    const int sig2 = plate ? plate_sig() : 0;
-    if (sig != last_sig || sig2 != last_sig2 || hud_dirty || now - last_draw > 1000)
+    const int sig2 = plate || lvui ? plate_sig() : 0;
+    if (sig != last_sig || sig2 != last_sig2 || hud_dirty || now - last_draw > (now < plate_fast_until ? 60 : 1000))
     {
         hud_dirty = 0;
         last_sig = sig;
         last_sig2 = sig2;
         last_draw = now;
         if (plate) { plate_draw(lit, blink); plate_drawn = 1; }
+        else if (lvui) { plate_draw_ex(lit, blink, 1); plate_drawn = 1; }
         else hud_draw(lit, blink);
     }
 }
@@ -1794,8 +1894,6 @@ static int ui_key(struct event *event, int key)
     return 0;
 }
 
-/* the button under the lens (depth-of-field preview) held with a dial: the look for the next pictures changes, shown top left on the back screen */
-static int dof_held;
 static void step_look(int dir)
 {
     const int n = fos_nfilms;
@@ -1809,14 +1907,33 @@ static void step_look(int dir)
 static unsigned int lv_key(unsigned int key)
 {
     if (dev_busy) return 1;
-    if (key == MODULE_KEY_PRESS_DP) { dof_held = 1; return 1; }       /* Canon still sees the button */
-    if (key == MODULE_KEY_UNPRESS_DP) { dof_held = 0; return 1; }
-    if (dof_held && shooting_screen() && !ROLL_FINISHED &&
-        (key == MODULE_KEY_WHEEL_LEFT || key == MODULE_KEY_WHEEL_RIGHT || key == MODULE_KEY_WHEEL_UP || key == MODULE_KEY_WHEEL_DOWN))
+    /* the look menu (opened with M-Fn, see handle_filmroll_keys): the dial chooses, each step takes effect at once; SET, the shutter
+     * or four idle seconds close it */
+    if (look_menu_open)
     {
-        step_look(key == MODULE_KEY_WHEEL_RIGHT || key == MODULE_KEY_WHEEL_DOWN ? 1 : -1);
-        return 0;
+        look_menu_until = get_ms_clock() + 4000;
+        switch (key)
+        {
+            case MODULE_KEY_WHEEL_LEFT:
+            case MODULE_KEY_WHEEL_UP:
+            case MODULE_KEY_PRESS_UP:
+            case MODULE_KEY_PRESS_LEFT:  step_look(-1); return 0;
+            case MODULE_KEY_WHEEL_RIGHT:
+            case MODULE_KEY_WHEEL_DOWN:
+            case MODULE_KEY_PRESS_DOWN:
+            case MODULE_KEY_PRESS_RIGHT: step_look(1); return 0;
+            case MODULE_KEY_JOY_CENTER:
+            case MODULE_KEY_PRESS_SET:
+            case MODULE_KEY_Q:
+            case MODULE_KEY_MENU:
+            case MODULE_KEY_PLAY:
+            case MODULE_KEY_TRASH:       look_menu_open = 0; hud_dirty = 1; dbg("look menu closed (key %d)", key); return 0;
+            case MODULE_KEY_PRESS_HALFSHUTTER:
+            case MODULE_KEY_PRESS_FULLSHUTTER: look_menu_open = 0; hud_dirty = 1; dbg("look menu closed (shutter)"); return 1;     /* shoot as usual */
+            default: return 1;
+        }
     }
+
     /* what used to open the Magic Lantern menu opens home instead */
     if (key == MODULE_KEY_TRASH || key == MODULE_KEY_TOUCH_2_FINGER)
     {
@@ -1888,6 +2005,26 @@ static unsigned int lv_key(unsigned int key)
     return 1;
 }
 
+/* the button under the lens: the next look in the same category (colour, slide, B&W, cine, presets), wrapping round */
+static void next_look_in_category()
+{
+    const int n = fos_nfilms;
+    if (n < 2) return;
+    const int cur = COERCE(film_sel, 0, n - 1), group = fos_films[cur].group;
+    for (int k = 1; k < n; k++)
+    {
+        const int j = (cur + k) % n;
+        if (fos_films[j].group == group)
+        {
+            film_sel = roll_film = j;
+            leds_until = get_ms_clock() + 2000;
+            hud_dirty = 1;
+            dbg("lens button: next look in its category: %d %s", j, fos_films[j].name);
+            return;
+        }
+    }
+}
+
 int handle_filmroll_keys(struct event *event)
 {
     int key = module_translate_key(event->param, MODULE_KEY_PORTABLE);
@@ -1907,8 +2044,43 @@ int handle_filmroll_keys(struct event *event)
         return ui_key(event, key);
     }
 
+#ifdef GMT_GUICMD_PRESS_BUTTON_SOMETHING
+    /* M-Fn (and the top screen's light button) arrive as Canon's generic "other button" event, but so does some of the dial's and
+     * joystick's own traffic (the menu popped up while turning the dial). So the event only counts when no ordinary key came within
+     * a quarter of a second before or after it: it is held for 200 ms and hud_step acts on it if nothing else happened. While the back
+     * screen is up the event is kept from Canon, so Canon's own M-Fn pop-up does not appear. */
+    if (event->param == GMT_GUICMD_PRESS_BUTTON_SOMETHING && !dev_busy)
+    {
+        const int t = get_ms_clock();
+        plate_fast_until = t + 1500;
+        {
+            static int seen;
+            if (seen < 100) { seen++; dbg("other-button event: arg %x (back screen %d)", event->arg, plate_visible()); }
+        }
+        if (!plate_visible() && !look_menu_open) { return 1; }
+        if (t - last_key_ms < 300) { dbg("other-button event dropped: another event came just before"); return 1; }
+        mfn_pending_ms = t;
+        return 0;
+    }
+#endif
     if (!key)
+    {
+        static int unknown;                     /* what the camera sends for buttons we do not know: every kind except the screen refresh (67), for the log */
+        if (event->param != 0x67)
+        {
+            /* the dial and the joystick on the shooting screen come as events like these, not as keys: any of them near an "other
+             * button" event means it was not M-Fn */
+            last_key_ms = get_ms_clock();
+            plate_fast_until = last_key_ms + 1500;
+            if (mfn_pending_ms && last_key_ms - mfn_pending_ms < 300) { mfn_pending_ms = 0; dbg("other-button event dropped: event %x came with it", event->param); }
+            if (unknown < 300) { unknown++; dbg("key event not translated: %x (arg %x)", event->param, event->arg); }
+        }
         return 1;
+    }
+
+    last_key_ms = get_ms_clock();
+    plate_fast_until = last_key_ms + 1500;
+    if (mfn_pending_ms && last_key_ms - mfn_pending_ms < 250) { mfn_pending_ms = 0; dbg("other-button event dropped: a key came with it (key %d)", key); }
 
     /* newer firmware may group several wheel clicks into one event */
     int count = 1;
@@ -2069,6 +2241,7 @@ static void filmroll_task()
             }
         }
         else if (end_due && !ROLL_FINISHED) end_due = 0;
+        plate_guard();                      /* every 50 ms */
         if (k % 2 == 0)
             hud_step();                     /* every 100 ms */
 

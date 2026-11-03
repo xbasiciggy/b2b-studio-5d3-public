@@ -262,7 +262,7 @@ static const struct item lens_items[] =
 
 static const struct item system_items[] =
 {
-    { "Start screen", IT_CHOICE, FS_STARTUP, start_choices, 3, "The film shelf when the camera turns on." },
+    { "Start screen", IT_CHOICE, FS_STARTUP, start_choices, 3, "Off: the camera starts on the shooting screen with your look already chosen. Otherwise the film shelf opens when the camera turns on." },
     { "Boot animation", IT_TOGGLE, FS_BOOTANIM, 0, 0, "The aperture opening on the name at power on." },
     { "Screen colour", IT_PAGE, PAGE_SCREEN, 0, 0, "Match these colours to what you see around you." },
     { "Portrait review", IT_CHOICE, FS_PORTRAIT, portrait_choices, 2, "Pictures shot upright: Fill screen turns them to use the whole screen (tilt your head), Upright keeps them small." },

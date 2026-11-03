@@ -9,4 +9,5 @@ struct fos_bake_info {
 };
 void fos_port_bake_info(struct fos_bake_info *);
 void bake_status_enter(int);void bake_status_key(int);int bake_status_update(int);void bake_status_draw(void);
+void looks_enter(int);void looks_key(int);int looks_update(int);void looks_draw(void);
 #endif

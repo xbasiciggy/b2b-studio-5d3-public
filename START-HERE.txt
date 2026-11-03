@@ -1,4 +1,4 @@
-B2B Studio for the Canon EOS 5D Mark III  (beta 5)
+B2B Studio for the Canon EOS 5D Mark III  (beta 6)
 Canon EOS 5D Mark III, CANON FIRMWARE 1.2.3 ONLY.  Experimental software: use at your own risk.
 
 WHAT IT DOES
@@ -21,7 +21,7 @@ INSTALL
 3. Pick a look (Film), then shoot. Open Develop to watch the bake queue and Images to look at the results.
 To go back: restore your card backup.
 
-BUTTONS (shooting screen)  TRASH = Home, PLAY = Images.   Settings are under Home > System, Viewfinder and Lens.
+BUTTONS (shooting screen)  TRASH = Home, PLAY = Images, M-Fn or the button under the lens = a list of looks (joystick or dial to choose, SET to go back).   Settings are under Home > System, Viewfinder and Lens.
 If the camera does not start, take the battery and card out, then start it without the card.
 
 WHAT TO EXPECT

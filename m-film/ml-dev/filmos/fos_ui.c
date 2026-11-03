@@ -37,6 +37,8 @@ static int boot_then_leave;
 static int enter_t;
 #define ENTER_LEN 420
 #define LEAVE_LEN 380
+int fos_port_live(void);
+#define SLIDE_LEN 300                    /* leaving to the back screen: the menu swipes off to the left */
 
 /* the toast */
 static char toast_msg[80];
@@ -514,6 +516,7 @@ void ui_go(int to, int arg, int how)
         case SCR_SHELF: shelf_enter(arg); break;
         case SCR_HOME:  studio_enter(arg);  break;
         case SCR_BAKE_STATUS: bake_status_enter(arg); break;
+        case SCR_LOOKS: looks_enter(arg); break;
         case SCR_PAGE:  page_enter(arg);  break;
         case SCR_ROLL:  roll_enter(arg);  break;
         case SCR_DARK:  dark_enter(arg);  break;
@@ -538,6 +541,7 @@ void ui_leave()
     if (leaving) return;
     leaving = 1;
     leave_t = 0;
+    if (!fos_port_live()) memcpy(buf_snap, cv->px, FOS_W * FOS_H);       /* what the menu shows now, for the swipe */
 }
 
 /* ---------------------------------------------------------------- the loop */
@@ -553,6 +557,7 @@ static void screen_key(int k)
         case SCR_SHELF: shelf_key(k); break;
         case SCR_HOME:  studio_key(k);  break;
         case SCR_BAKE_STATUS: bake_status_key(k); break;
+        case SCR_LOOKS: looks_key(k); break;
         case SCR_PAGE:  page_key(k);  break;
         case SCR_ROLL:  roll_key(k);  break;
         case SCR_DARK:  dark_key(k);  break;
@@ -568,6 +573,7 @@ static int screen_update(int dt)
         case SCR_SHELF: return shelf_update(dt);
         case SCR_HOME:  return studio_update(dt);
         case SCR_BAKE_STATUS: return bake_status_update(dt);
+        case SCR_LOOKS: return looks_update(dt);
         case SCR_PAGE:  return page_update(dt);
         case SCR_ROLL:  return roll_update(dt);
         case SCR_DARK:  return dark_update(dt);
@@ -584,6 +590,7 @@ static void screen_draw()
         case SCR_SHELF: shelf_draw(); break;
         case SCR_HOME:  studio_draw();  break;
         case SCR_BAKE_STATUS: bake_status_draw(); break;
+        case SCR_LOOKS: looks_draw(); break;
         case SCR_PAGE:  page_draw();  break;
         case SCR_ROLL:  roll_draw();  break;
         case SCR_DARK:  dark_draw();  break;
@@ -809,6 +816,7 @@ void fos_ui_run(int open)
             case FOS_OPEN_REVIEW:   screen = SCR_PRINTS; gallery_enter(-2); break;
             case FOS_OPEN_END:      screen = SCR_ROLL; roll_enter(1); break;
             case FOS_OPEN_DARKROOM: screen = SCR_DARK; dark_enter(0); break;
+            case FOS_OPEN_LOOKS:    screen = SCR_LOOKS; looks_enter(0); break;
             default:                screen = SCR_SHELF; shelf_enter(0); break;
         }
     }
@@ -882,6 +890,25 @@ void fos_ui_run(int open)
             int t;
             if (leaving) { leave_t += dt; t = leave_t; }
             else         { enter_t += dt; t = enter_t; }
+            if (leaving && !fos_port_live())
+            {
+                /* back to the back screen (no LiveView): the menu swipes off to the left, instead of a shutter closing on a black screen */
+                const float f = clampf((float) t / SLIDE_LEN, 0, 1);
+                const int off = (int) (ease_out(f) * FOS_W);
+                const uint8_t blk = fos_ix(FC(RAMP_GRAY, 0));
+                for (int y = 0; y < FOS_H; y++)
+                {
+                    uint8_t *row = cv->px + y * FOS_W;
+                    memcpy(row, buf_snap + y * FOS_W + off, FOS_W - off);
+                    memset(row + FOS_W - off, blk, off);
+                }
+                ui_clobbered = 1;
+                fos_port_present(cv->px, FOS_W, 0, FOS_H);
+                if (t >= SLIDE_LEN) quit = 1;
+                dmg_y0 = FOS_H; dmg_y1 = 0;
+                fos_port_sleep(frame_rest(now));
+                continue;
+            }
             if (screen != SCR_BOOT) screen_draw();
             int open_k;
             int ang = (int) (t * 9);
@@ -893,6 +920,7 @@ void fos_ui_run(int open)
                 {
                     shutter_fill(0);
                     open_k = (int) (ease_out((f - 0.35f) / 0.65f) * 4096);
+                    if (!fos_port_live()) { open_k = 0; quit = 1; }     /* to the back screen: stay on the closed shutter, nothing of Canon's screen is shown */
                 }
                 if (t >= LEAVE_LEN) quit = 1;
             }

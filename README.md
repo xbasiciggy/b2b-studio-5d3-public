@@ -8,7 +8,7 @@ and every picture is baked in the background with a film look (a 3D colour table
 ## Try it
 
 1. You need a 5D Mark III on Canon firmware **1.2.3** that already runs [Magic Lantern](https://magiclantern.fm) (5D3.123).
-2. Download `B2B-Studio-5D3.123-beta5.zip` from the [Releases](../../releases) page.
+2. Download `B2B-Studio-5D3.123-beta6.zip` from the [Releases](../../releases) page.
 3. **Back up your card**, then follow `START-HERE.txt` in the zip (copy `autoexec.bin` and the `ML` folder to the card).
 
 It is experimental: it has been run on one camera. A bad build can stop Magic Lantern from starting; the camera works normally without the card.
@@ -21,6 +21,7 @@ Baking takes tens of seconds per picture on the camera's processor.
   a film-camera "top plate" on the back screen when LiveView is off, with an always-on light meter;
   portrait pictures turned to fill the screen in the review (System > Portrait review).
 - No logo splash.
+- Beta 6 over beta 5: a modern LiveView screen (cards over the picture: shutter, aperture, ISO, light meter, your look and the bake queue; Home > Viewfinder > LiveView screen), the camera starts on the shooting screen with Cold Vibes chosen, M-Fn or the button under the lens opens a full-screen look list (joystick or dial to choose), menus swipe away to the back screen without a black flash, Canon's own shooting screen no longer flashes in over the back screen, and the review of a baked picture shows halation and grain.
 - Beta 5 over beta 4: the back screen no longer flashes while a bake runs, Images marks every picture with a green tick (baked) or a red disc (waiting), and Large pictures are baked at Large (they used to be halved; a Large bake takes about four times as long as a Medium one).
 - Beta 4 over beta 3: a new modern back screen (raised cards, dark red gradient; the classic plate is under Viewfinder > Back screen style), the camera starts on Cold Vibes, the status line no longer fills with percent signs, the back screen no longer shows pale boxes and garbled colours after a shot, and you can change the look from the camera body: hold the button under the lens (depth-of-field preview) and turn the main dial.
 - Beta 3 over beta 2: the back-screen status line shows the right queue count and time left (it showed garbage numbers), and the bake bar is no longer drawn twice.

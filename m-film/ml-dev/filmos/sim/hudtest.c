@@ -27,13 +27,14 @@ int main(int argc, char **argv)
     if (argc > 1 && argv[1][0] == 'e') { h.finished = 1; strcpy(h.shutter, "0.5\""); h.want = 30; }
     fos_gfx_init();
     sim_fonts();
-    if (argc > 1 && argv[1][0] == 'p')
+    if (argc > 1 && (argv[1][0] == 'p' || argv[1][0] == 'v'))
     {
         h.iso = getenv("ISO") ? atoi(getenv("ISO")) : 400; h.frame = 12; h.bake_queued = 2; h.bake_active = 1; h.bake_percent = 56; h.blink = 1;
         snprintf(h.status, sizeof(h.status), "Bake 56%%  ~12s left  |  2 queued");
         snprintf(h.mode, sizeof(h.mode), "M"); snprintf(h.quality, sizeof(h.quality), getenv("Q") ? getenv("Q") : "S1"); h.quality_fine = getenv("NORMAL") ? 0 : 1; snprintf(h.wb, sizeof(h.wb), "5200K"); snprintf(h.clock, sizeof(h.clock), "14:32");
         h.focal = 50; h.battery = 87; h.shots_left = 1240; h.style = getenv("STYLE") ? atoi(getenv("STYLE")) : 0;
-        fos_hud_plate(ov, 960, &h, &p);
+        if (getenv("MENU")) { static const char *const nm[9] = { "KODAK Portra 160", "KODAK Portra 400", "KODAK Portra 800", "FUJIFILM Pro 400H", "Cold Vibes", "Teal Orange", "ILFORD HP5 Plus", "CineStill 800T", "Agfa Vista 200" }; h.menu_n = 9; h.menu_row = 4; for (int i = 0; i < 9; i++) h.menu_name[i] = nm[i]; }
+        if (argv[1][0] == 'v') fos_hud_lv(ov, 960, &h, &p); else fos_hud_plate(ov, 960, &h, &p);
         FILE *ix = fopen("out/plate.idx", "wb");
         for (int y = 0; y < 480; y++) fwrite(ov + y * 960, 1, 720, ix);
         fclose(ix);

@@ -111,6 +111,7 @@ enum
     FS_PORTRAIT,                /* review of a picture shot upright: 0 upright (small), 1 turned to fill the screen */
     FS_PLATE,                   /* the back screen as a film camera's top plate while LiveView is off */
     FS_PLATE_STYLE,             /* its look: 0 classic, 1 modern */
+    FS_LVUI,                    /* the modern LiveView screen (cards over the picture), when the style is modern */
     FS_GRAIN, FS_HALATION,      /* baked looks: 0 off, 1 light, 2 medium, 3 strong */
     FS_COUNT
 };
@@ -145,7 +146,8 @@ struct fos_roll
 enum { FOS_OPEN_SHELF, FOS_OPEN_HOME, FOS_OPEN_BOOT, FOS_OPEN_BOOT_LV,
        FOS_OPEN_PRINTS,     /* PLAY: the latest prints */
        FOS_OPEN_END,        /* the roll has just been finished */
-       FOS_OPEN_DARKROOM, FOS_OPEN_REVIEW };
+       FOS_OPEN_DARKROOM, FOS_OPEN_REVIEW,
+       FOS_OPEN_LOOKS };    /* M-Fn on the back screen: a list of looks, chosen with the joystick or the dial */
 
 /* ---------------------------------------------------------------- the port */
 
@@ -220,6 +222,10 @@ struct fos_hud
     int quality_fine;                   /* the JPEG is Fine, not Normal */
     int focal, battery, shots_left;     /* mm (0 = unknown), percent (-1 unknown), pictures left on the card (-1 unknown) */
     int style;                          /* the plate's look: 0 classic, 1 modern */
+    int menu_n;                         /* the look menu over the plate: rows shown (0 = closed), the selected one is row menu_row */
+    int menu_row;
+    const char *menu_name[9];
+    const char *menu_title;             /* the category shown above the list (NULL: "LOOK") */
 };
 
 struct fos_hud_palette
@@ -236,6 +242,7 @@ void fos_hud_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p);
 /* the whole screen as a film camera's top plate (LiveView off): look, shutter, aperture, frame count, the light meter,
  * and the bake queue. Canon's own palette, like the HUD; fos_hud_plate_clear gives the screen back. */
 void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p);
+void fos_hud_lv(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p);   /* the modern LiveView screen: cards over the picture, transparent elsewhere */
 void fos_hud_plate_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p);
 
 /* ---------------------------------------------------------------- the UI */

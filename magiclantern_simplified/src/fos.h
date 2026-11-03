@@ -220,6 +220,9 @@ struct fos_hud
     int quality_fine;                   /* the JPEG is Fine, not Normal */
     int focal, battery, shots_left;     /* mm (0 = unknown), percent (-1 unknown), pictures left on the card (-1 unknown) */
     int style;                          /* the plate's look: 0 classic, 1 modern */
+    int menu_n;                         /* the look menu over the plate: rows shown (0 = closed), the selected one is row menu_row */
+    int menu_row;
+    const char *menu_name[9];
 };
 
 struct fos_hud_palette

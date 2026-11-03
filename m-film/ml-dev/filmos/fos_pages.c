@@ -248,6 +248,7 @@ static const struct item finder_items[] =
     { "LEDs on half-press", IT_TOGGLE, FS_LEDS, 0, 0, "Like a real SLR: the readout lights only while metering." },
     { "Back screen", IT_TOGGLE, FS_PLATE, 0, 0, "While LiveView is off the back screen shows a film camera's top plate: shutter, aperture, frames, meter, the bake queue." },
     { "Back screen style", IT_CHOICE, FS_PLATE_STYLE, plate_style_choices, 2, "Modern: raised cards on a dark red gradient. Classic: the seven-segment top plate." },
+    { "LiveView screen", IT_TOGGLE, FS_LVUI, 0, 0, "With the modern back screen style: the shutter, aperture and ISO as cards over LiveView, a light meter, your look and the bake queue." },
     { "Focusing screen", IT_TOGGLE, FS_FOCUS, 0, 0, "A split-image circle and microprism collar (decoration only)." },
     { "Wind lever", IT_CHOICE, FS_WIND, wind_choices, 3, "After each frame press SET to wind on. Locking is experimental." },
 };
@@ -262,7 +263,7 @@ static const struct item lens_items[] =
 
 static const struct item system_items[] =
 {
-    { "Start screen", IT_CHOICE, FS_STARTUP, start_choices, 3, "The film shelf when the camera turns on." },
+    { "Start screen", IT_CHOICE, FS_STARTUP, start_choices, 3, "Off: the camera starts on the shooting screen with your look already chosen. Otherwise the film shelf opens when the camera turns on." },
     { "Boot animation", IT_TOGGLE, FS_BOOTANIM, 0, 0, "The aperture opening on the name at power on." },
     { "Screen colour", IT_PAGE, PAGE_SCREEN, 0, 0, "Match these colours to what you see around you." },
     { "Portrait review", IT_CHOICE, FS_PORTRAIT, portrait_choices, 2, "Pictures shot upright: Fill screen turns them to use the whole screen (tilt your head), Upright keeps them small." },
