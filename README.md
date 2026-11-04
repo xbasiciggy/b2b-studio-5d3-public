@@ -179,7 +179,7 @@ copy your photos (`DCIM`, `PIXELJPG`) off, reinstall Magic Lantern, then copy th
 <table>
 <tr>
 <td width="50%"><b><a href="https://basiciggy.com/cfw/designer/">Film Roll Designer</a></b><br>Turns a Lightroom preset, a <code>.cube</code> LUT or a few sliders into a new film roll for the shelf, with a live preview of the canister and the look, and exports the files to copy onto the card. It runs in your browser; nothing is uploaded.</td>
-<td width="50%"><b><a href="https://basiciggy.com/cfw/looks/">Film Presets</a></b><br>Presets other people made. Add one straight to your card from the browser, or <a href="../../issues/new?template=share-a-look.md">share yours</a>. Sample pictures, each with its film and camera, are in the <a href="https://basiciggy.com/cfw/gallery/">Gallery</a> (<a href="../../issues/new?template=share-a-photo.md">send yours</a>).</td>
+<td width="50%"><b><a href="https://basiciggy.com/cfw/looks/">Film Presets</a></b><br>Presets other people made. Add one straight to your card from the browser, or <a href="../../issues/new?template=share-a-look.md">share yours</a>. Sample pictures, with arrows to switch preset on the same shot, are in the <a href="https://basiciggy.com/cfw/gallery/">Gallery</a> (<a href="../../issues/new?template=share-a-photo.md">send yours</a>).</td>
 </tr>
 </table>
 
