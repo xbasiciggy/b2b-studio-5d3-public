@@ -95,8 +95,7 @@ Other cameras reuse these buttons where they exist; [tell us](#testing) which on
 
 ## Film looks
 
-**72 film looks** from the M-Film project, on shelves of colour negative, slide, black and white and cinema film, plus the **Cold Vibes** preset.
-**Classic Neg.**, **Wildlight** and **Wildlight 2**, and a new **FUJI X** shelf (Astia, Classic Chrome, Classic Neg., Provia, Reala Ace), are coming in the next build. Each has its own colour, grain and halation.
+**72 film looks** from the M-Film project, on shelves of colour negative, slide, black and white and cinema film, plus the **Cold Vibes** preset and a **FUJI X** shelf: Astia, Classic Chrome, Classic Neg., Provia and Reala Ace. Each has its own colour, grain and halation.
 
 <table>
 <tr>
@@ -128,13 +127,13 @@ Each build is made for **one Canon model on one Canon firmware version**, and ne
 
 | Camera | Canon firmware | Magic Lantern | Status | Download |
 |---|---|---|---|---|
-| Canon EOS 5D Mark III | 1.2.3 | 5D3.123 | ⚠️ **Beta.** Tried on one camera | `B2B-Studio-5D3.123-beta6.zip` ([release](../../releases/tag/v0.6.0-beta)) |
-| Canon EOS 6D | 1.1.6 | 6D.116 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.6.1-test-eosm-6d) |
-| Canon EOS M | 2.0.2 | EOSM.202 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.6.1-test-eosm-6d) |
-| Canon EOS 700D / Rebel T5i | 1.1.5 | 700D.115 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.6.2-test-dsp5) |
-| Canon EOS 650D / Rebel T4i | 1.0.4 | 650D.104 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.6.2-test-dsp5) |
-| Canon EOS 100D / Rebel SL1 | 1.0.1 | 100D.101 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.6.2-test-dsp5) |
-| Canon EOS 70D | 1.1.2 | 70D.112 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.6.2-test-dsp5) |
+| Canon EOS 5D Mark III | 1.2.3 | 5D3.123 | ⚠️ **Beta.** Tried on one camera | `B2B-Studio-5D3.123-beta7.zip` ([release](../../releases/tag/v0.7.0-beta)) |
+| Canon EOS 6D | 1.1.6 | 6D.116 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
+| Canon EOS M | 2.0.2 | EOSM.202 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
+| Canon EOS 700D / Rebel T5i | 1.1.5 | 700D.115 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
+| Canon EOS 650D / Rebel T4i | 1.0.4 | 650D.104 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
+| Canon EOS 100D / Rebel SL1 | 1.0.1 | 100D.101 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
+| Canon EOS 70D | 1.1.2 | 70D.112 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
 
 ⚠️ tried on a camera, experimental · 🧪 builds and fits the camera's boot size limit where known; **nobody has run it on a camera yet**.
 Any other camera or firmware version is not supported.
@@ -183,6 +182,11 @@ copy your photos (`DCIM`, `PIXELJPG`) off, reinstall Magic Lantern, then copy th
 </table>
 
 ---
+
+## What is new
+
+- **Beta 7 and test builds round 2:** a new **FUJI X** shelf after Presets, with five looks: Astia, Classic Chrome, Classic Neg., Provia and Reala Ace. The test builds for the other cameras carry it too. Nothing else changed on the 5D Mark III.
+- **Beta 6:** a modern LiveView screen, the camera starts on the shooting screen, M-Fn or the button under the lens opens a full-screen look list, no flashes when leaving a menu, and halation and grain show in the review.
 
 ## What to expect
 

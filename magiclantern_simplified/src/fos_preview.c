@@ -7,6 +7,9 @@
  * far more than the fixed 6x6x6 cube and 4x4 ordered dither of BVP2. */
 #include "fos.h"
 #include "fos_preview.h"
+#ifndef CONFIG_EOSM    /* the EOS M build stays at -Os: it has to fit under that camera's boot size limit */
+#pragma GCC optimize ("O2")   /* the pixel loops: the camera build is -Os, which left them at about 240 cycles a pixel */
+#endif
 /* working memory that is read and written per pixel comes from the ordinary cached heap (the port's fos_port_alloc_hot) */
 __attribute__((weak)) void *fos_port_alloc_hot(int size){return fos_port_alloc(size);}
 static void path_for(char *out,int size,const char *jpeg){
@@ -147,6 +150,69 @@ static void cube_row(struct fos_preview *p,const uint8_t *rgb,int y,int span){
   const uint8_t *c=rgb+(x*span/p->w)*3;
   int d=fos_bayer[y&3][x&3]*51/16;
   p->pixels[y*p->w+x]=1+((c[0]+d)/51)*36+((c[1]+d)/51)*6+(c[2]+d)/51;
+ }
+}
+
+
+/* ---------------------------------------------------------------- the review while it is built */
+__attribute__((weak)) void fos_port_sleep(int ms){(void)ms;}
+__attribute__((weak)) void fos_port_live_started(void){}
+struct fos_live fos_live;
+void fos_live_begin(const struct fos_preview *p,int orientation,const char *name){
+ fos_live.active=0;fos_live.finishing=0;fos_live.acked=0;fos_live.rows=0;fos_live.result=0;fos_live.paint_orient=0;
+ fos_live.w=p->w;fos_live.h=p->h;fos_live.orientation=orientation;fos_live.rgb=p->rgb;
+ snprintf(fos_live.name,sizeof(fos_live.name),"%s",name);
+ fos_live.serial++;fos_live.active=p->rgb!=0;
+ fos_port_live_started();
+}
+void fos_live_progress(const struct fos_preview *p){
+ if(fos_live.active&&p->cur>0)fos_live.rows=p->cur;      /* rows below the one being summed are written */
+}
+static void flush_row(struct fos_preview *p);
+void fos_live_end(struct fos_preview *p){
+ if(!fos_live.active)return;
+ flush_row(p);fos_live.rows=p->h;fos_live.finishing=1;
+ for(int t=0;t<600&&!fos_live.acked;t+=10)fos_port_sleep(10);     /* the screen takes the last rows */
+ fos_live.active=0;
+ while(fos_live.reading)fos_port_sleep(2);
+}
+void fos_live_cube(uint8_t pal[216][3]){
+ for(int i=0;i<216;i++){pal[i][0]=i/36*51;pal[i][1]=i/6%6*51;pal[i][2]=i%6*51;}
+}
+void fos_live_paint(uint8_t *dst,int from,int to){
+ const int sw=fos_live.w,sh=fos_live.h,o=fos_live.paint_orient?fos_live.paint_orient:fos_live.orientation;
+ if(!fos_live.rgb||sw<1||sh<1)return;
+ if(to>sh)to=sh;
+ if(from<0)from=0;
+ if(to<=from)return;
+ int ow=sw,oh=sh;if(o==6||o==8){ow=sh;oh=sw;}
+ int dw=720,dh=oh*720/ow;if(dh>480){dw=dw*480/dh;dh=480;}
+ const int left=(720-dw)/2,top=(480-dh)/2;
+ /* the destination rows or columns whose source row lies in from..to-1 */
+ int x0=0,x1=dw,y0=0,y1=dh;
+ if(o==6||o==8){
+  int a=o==6?sh-to:from,b=o==6?sh-from:to;       /* source rows as u, the display column index */
+  x0=(a*dw+ow-1)/ow;x1=(b*dw+ow-1)/ow;
+ }else{
+  int a=o==3?sh-to:from,b=o==3?sh-from:to;
+  y0=(a*dh+oh-1)/oh;y1=(b*dh+oh-1)/oh;
+ }
+ if(x1>dw)x1=dw;
+ if(y1>dh)y1=dh;
+ static uint16_t ux[720];
+ for(int x=x0;x<x1;x++)ux[x]=(uint16_t)(x*ow/dw);
+ for(int y=y0;y<y1;y++){
+  int v=y*oh/dh;
+  uint8_t *row=dst+(top+y)*720+left;
+  for(int x=x0;x<x1;x++){
+   int u=ux[x],sx=u,sy=v;
+   if(o==3){sx=sw-1-u;sy=sh-1-v;}
+   else if(o==6){sx=v;sy=sh-1-u;}
+   else if(o==8){sx=sw-1-v;sy=u;}
+   const uint8_t *c=fos_live.rgb+(sy*sw+sx)*3;
+   int d=fos_bayer[y&3][x&3]*51/16;
+   row[x]=1+((c[0]+d)/51)*36+((c[1]+d)/51)*6+(c[2]+d)/51;
+  }
  }
 }
 
@@ -326,12 +392,25 @@ void fos_lut_pixel_trilinear(const uint8_t *lut, const uint8_t *p, uint8_t *out)
  * fractions, and the result is the base corner plus three weighted steps along edges.
  * Per channel: 4 table reads, 3 multiplies, 1 divide-free rounding. Differs from trilinear
  * by a level or two at most on smooth tables (see tests/lutcheck.py). */
+/* Per 8-bit value: which table cell it falls in (0..31) and how far through it (0..255), packed ix << 8 | t. The same numbers the
+ * lookup used to work out for every channel of every pixel (three DIV255s each); the camera spends about 240 cycles a pixel here. */
+static uint16_t lut_cell[256];
+static volatile int lut_cell_ready;
+static void lut_cell_init(void)
+{
+    for(int v=0;v<256;v++){
+        int x=v*32,ix=DIV255(x),t=x-ix*255;
+        if(ix==32){ix=31;t=255;}
+        lut_cell[v]=(uint16_t)(ix<<8|t);
+    }
+    lut_cell_ready=1;
+}
 void fos_lut_pixel(const uint8_t *lut, const uint8_t *p, uint8_t *out)
 {
-    int ix[3], t[3];
-    for(int c=0;c<3;c++) { int v=p[c]*32; ix[c]=DIV255(v); t[c]=v-ix[c]*255; if(ix[c]==32){ix[c]=31;t[c]=255;} }
-    const uint8_t *q=lut+(ix[2]*1089+ix[1]*33+ix[0])*3;
-    const int fr=t[0],fg=t[1],fb=t[2];
+    if(!lut_cell_ready)lut_cell_init();
+    const unsigned e0=lut_cell[p[0]],e1=lut_cell[p[1]],e2=lut_cell[p[2]];
+    const int fr=e0&255,fg=e1&255,fb=e2&255;
+    const uint8_t *q=lut+((e2>>8)*1089+(e1>>8)*33+(e0>>8))*3;
     /* corner offsets (bytes) for +1 in r, g, b */
     const int R=3,G=99,B=3267;
     int o1,o2,w1,w2,w3;                 /* path: base -> +o1 -> +o2 -> all three */

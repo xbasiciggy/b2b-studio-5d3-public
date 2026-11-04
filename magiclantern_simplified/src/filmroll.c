@@ -45,11 +45,17 @@
 #include <mem.h>
 #include <powersave.h>
 #include <vram.h>
+#include <shoot.h>
+#include <battery.h>
+extern int GetBatteryLevel() __attribute__((weak));       /* not every camera has it (the EOS M does not): then the battery is simply not shown */
 #include "filmroll.h"
 #include "fos.h"
 #include "fos_dev.h"
 #include "fos_bake.h"
 #include "fos_preview.h"
+#include "fos_bench.h"
+#include "fos_jpeg.h"
+#include "tjpgd.h"
 #include "fos_studio.h"
 
 #include <stdarg.h>
@@ -58,16 +64,22 @@ extern int ml_started;
 extern void CancelDateTimer();
 
 /* user settings */
-static CONFIG_INT("filmroll.film",      film_sel,         0);
+static CONFIG_INT("filmroll.look",      film_sel,         -1);    /* -1: not chosen yet; the first start picks Cold Vibes (see load_films) */
 static CONFIG_INT("filmroll.exp",       exp_sel,          0);
 static CONFIG_INT("filmroll.hud",       hud_enabled,      0);
 static CONFIG_INT("filmroll.focus",     focus_screen,     1);
 static CONFIG_INT("filmroll.leds",      leds_on_half,     1);
 static CONFIG_INT("filmroll.wind",      wind_mode,        0);   /* 0 off, 1 reminder, 2 block shutter */
 static CONFIG_INT("filmroll.playlock",  play_lock,        0);
-static CONFIG_INT("filmroll.startup",   startup_picker,   2);   /* 0 off, 1 when no film, 2 always */
+static CONFIG_INT("filmroll.startup3",  startup_picker,   0);   /* 0 off (the back screen comes first), 1 when no film, 2 always; a new key so the old default of 2 is not kept */
 static CONFIG_INT("filmroll.bootanim",  boot_anim,        0);
-static CONFIG_INT("filmroll.theme",     ui_theme_cfg,     1);
+static CONFIG_INT("filmroll.colour",   ui_theme_cfg,     0);
+static CONFIG_INT("filmroll.plate",     plate_enabled,    1);
+static CONFIG_INT("filmroll.lvui",      lvui_enabled,     1);    /* the modern LiveView screen (cards over the picture), with the modern style */
+static CONFIG_INT("filmroll.portrait",  portrait_cfg,     1);
+static CONFIG_INT("filmroll.style",     plate_style,      1);    /* back screen: 0 classic, 1 modern (the default) */
+static CONFIG_INT("filmroll.grain",     grain_cfg,        0);
+static CONFIG_INT("filmroll.halation",  halation_cfg,     0);
 static CONFIG_INT("filmroll.debug",     debug_log,        1);
 static CONFIG_INT("filmroll.lens_wide", lens_widest,      6);   /* index into fos_fstops: f/1.8 */
 static CONFIG_INT("filmroll.fstop",     manual_fstop,     6);
@@ -142,6 +154,9 @@ static int shooting_screen()
 {
     return (lv || !FOS_LV_ONLY) && display_idle() && !is_movie_mode();
 }
+static int plate_visible();
+static int lvui_visible();
+static void plate_draw(int lit, int blink);
 
 #define DBG_STATE(what) dbg("%s: ml=%d lv=%d idle=%d movie=%d mode=%d gui=%d", what, \
                             ml_started, lv, display_idle(), is_movie_mode(), shooting_mode, CURRENT_GUI_MODE)
@@ -441,6 +456,7 @@ static volatile int bake_active,bake_done,bake_total,bake_start,bake_paused_ms,b
 static volatile int review_pending,bake_revision;
 static volatile int bake_completed,bake_failed;
 int fos_port_bake_revision(void){return bake_revision;}
+void fos_port_live_started(void){review_pending=1;}
 static char review_file[13];
 static void open_ui(int screen);
 const char *fos_port_review_name(void){return review_file;}
@@ -453,32 +469,58 @@ int fos_port_bake_yield(void){
  bake_paused_ms+=get_ms_clock()-start;bake_paused=0;
  return ml_shutdown_requested;
 }
-void fos_port_bake_progress(int done,int total){bake_done=done;bake_total=total;}
+/* Time left, from how fast the last few seconds went (not the whole bake so far: a slow start while previews were being made
+ * used to give estimates of many minutes). Paused time is left out. Rows per second x 16; 0 = not known yet. */
+/* The queue can hold BAKE_QUEUE pictures, so head - tail can never be more. If it ever is (a corrupted counter, seen once as
+ * "552 queued" on the camera), say so in the log and start the queue again instead of showing or acting on the number. */
+static unsigned bake_queued(void){
+ unsigned head=bake_head,tail=bake_tail;
+ if(head-tail>BAKE_QUEUE){
+  static int logged;
+  if(!logged){logged=1;dbg("bake queue: impossible count, head %d tail %d (cap %d): queue reset",(int)head,(int)tail,BAKE_QUEUE);}
+  bake_tail=head;return 0;
+ }
+ return head-tail;
+}
+static int eta_t,eta_d,eta_rate;
+static int bake_eta_s(void){
+ if(eta_rate<=0||bake_total<=bake_done)return -1;
+ int s=(int)((int64_t)(bake_total-bake_done)*16/eta_rate);
+ return s>5999?5999:s;
+}
+void fos_port_bake_progress(int done,int total){
+ bake_done=done;bake_total=total;
+ int t=get_ms_clock()-bake_paused_ms;
+ if(!eta_t||done<eta_d){eta_t=t;eta_d=done;eta_rate=0;}
+ else if(t-eta_t>=500){
+  int r=(int)((int64_t)(done-eta_d)*16000/(t-eta_t));
+  eta_rate=eta_rate?(eta_rate*3+r)/4:r;eta_t=t;eta_d=done;
+ }
+}
 void fos_port_bake_status(char *out,int size){
- unsigned queued=bake_head-bake_tail;
+ unsigned queued=bake_queued();
  if(!queued){out[0]=0;return;}
  if(!bake_active){snprintf(out,size,"Preparing preview  |  %d queued",queued);return;}
  int pct=bake_total?bake_done*100/bake_total:0;
  if(bake_paused){snprintf(out,size,"Bake paused for capture  |  %d queued",queued);return;}
- int elapsed=MAX(0,get_ms_clock()-bake_start-bake_paused_ms);
- if(pct>=5&&bake_done>0){
-  int remain=(int)((int64_t)elapsed*(bake_total-bake_done)/bake_done/1000);
-  snprintf(out,size,"Bake %d%%  ~%ds left  |  %d queued",pct,remain,queued);
- }else snprintf(out,size,"Bake %d%%  estimating...  |  %d queued",pct,queued);
+ int remain=bake_eta_s();
+ /* the percent sign is put in by hand: neither "%%" nor "%c" with '%' came out right on the camera (the first shifted the numbers after it,
+  * the second filled the line with percent signs), so no format string below contains one */
+ int n=snprintf(out,size,"Bake %d",pct);
+ if(n<0||n+2>=size)return;
+ out[n]='%';out[n+1]=0;
+ if(pct>=5&&remain>=0) snprintf(out+n+1,size-n-1,"  ~%ds left  |  %d queued",remain,(int)queued);
+ else snprintf(out+n+1,size-n-1,"  estimating...  |  %d queued",(int)queued);
 }
 void fos_port_bake_info(struct fos_bake_info *info){
  memset(info,0,sizeof(*info));info->remaining=-1;
  info->completed=bake_completed;info->failed=bake_failed;
- unsigned tail=bake_tail,head=bake_head;
- if(head<=tail)return;
- unsigned count=head-tail;if(count>BAKE_QUEUE)count=BAKE_QUEUE;
+ unsigned count=bake_queued(),tail=bake_tail;
+ if(!count)return;
  info->queued=count;info->active=bake_active;info->paused=bake_paused;
  if(info->active&&bake_total>0){
   int done=bake_done,total=bake_total;info->percent=COERCE(done*100/total,0,100);
-  if(info->percent>=5&&done>0&&!info->paused){
-   int elapsed=MAX(0,get_ms_clock()-bake_start-bake_paused_ms);
-   info->remaining=(int)((int64_t)elapsed*MAX(0,total-done)/done/1000);
-  }
+  if(info->percent>=5&&done>0&&!info->paused)info->remaining=bake_eta_s();
  }
  for(unsigned i=0;i<count && i<4;i++){
   struct bake_job *job=&bake_jobs[(tail+i)%BAKE_QUEUE];
@@ -508,6 +550,7 @@ static void poll_frames(void){
   job->number=captured;job->film=COERCE(film_sel,0,fos_nfilms-1);job->observed_size=-1;job->created_ms=get_ms_clock();
   snprintf(job->source,sizeof(job->source),"%s:/DCIM/%03d%s/%s%04d.JPG",get_shooting_card()->drive_letter,get_shooting_card()->folder_number,get_dcim_dir_suffix(),get_file_prefix(),captured);
   bake_head++;
+  dbg("bake queue: frame %d added, head %d tail %d",captured,(int)bake_head,(int)bake_tail);
  }
  previous=number;
 }
@@ -537,9 +580,11 @@ static void quick_preview_task(void *unused){
    struct bake_job *job=&bake_jobs[index%BAKE_QUEUE];
    if(job->state||!job_ready(job))continue;
    job->state=1;int start=get_ms_clock();
+   {const char *name=strrchr(job->dest,'/');snprintf(review_file,sizeof(review_file),"%s",name?name+1:job->dest);}
+   int live_serial=fos_live.serial;                                     /* the review opens as soon as rows are coming (fos_port_live_started) */
    job->quick_ok=fos_quick_preview(job->source,job->dest,job->film);
    dbg("quick preview: %s result %d %d ms (queued %d ms before it started)",job->source,job->quick_ok,get_ms_clock()-start,start-job->created_ms);
-   if(job->quick_ok){const char *name=strrchr(job->dest,'/');snprintf(review_file,sizeof(review_file),"%s",name?name+1:job->dest);review_pending=1;}
+   if(job->quick_ok&&fos_live.serial==live_serial)review_pending=1;   /* no live build happened: open it now */
    job->state=2;
    break;
   }
@@ -554,18 +599,19 @@ static void background_bake_task(void *unused){
   struct bake_job *job=&bake_jobs[bake_tail%BAKE_QUEUE];
   if(job->state==4){bake_failed++;bake_tail++;continue;}
   if(job->state!=2){msleep(30);continue;}
-  job->state=3;bake_active=1;bake_done=0;bake_total=1;bake_paused_ms=0;bake_start=get_ms_clock();
+  job->state=3;bake_active=1;bake_done=0;bake_total=1;eta_t=0;eta_rate=0;bake_paused_ms=0;bake_start=get_ms_clock();
   powersave_prohibit();int ok=fos_bake(job->source,job->dest,job->film);powersave_permit();
   dbg("background bake: %s -> %s result %d error %s; %d ms from shutter to done, %d ms of it paused for Canon/half-press",job->source,job->dest,ok,fos_bake_error(),get_ms_clock()-job->created_ms,bake_paused_ms);
   if(!ok&&!ml_shutdown_requested)NotifyBox(5000,"Bake: %s",fos_bake_error());
   if(ok&&!job->quick_ok){const char *name=strrchr(job->dest,'/');snprintf(review_file,sizeof(review_file),"%s",name?name+1:job->dest);review_pending=1;}
   if(ok)bake_completed++;else bake_failed++;
-  bake_active=0;job->state=4;bake_revision++;bake_tail++;msleep(10);
+  bake_active=0;job->state=4;bake_revision++;bake_tail++;dbg("bake queue: done, head %d tail %d",(int)bake_head,(int)bake_tail);msleep(10);
  }
 }
 static void bake_overlay(void){
  static int last,last_bar,visible,fill16;int now=get_ms_clock();
  if(ui_running||!shooting_screen()||get_halfshutter_pressed()||!job_state_ready_to_take_pic())return;
+ if(plate_visible()||lvui_visible())return;                     /* the back screen has its own bake bar and status line */
  if(now-last_bar<125)return;
  last_bar=now;
  struct fos_bake_info bi;fos_port_bake_info(&bi);
@@ -636,6 +682,7 @@ static int photo_mode = 0, photo_n = 0, photo_k = 256;
 static uint8_t photo_pal[FOS_PRINT_COLOURS][3];
 
 static void palette_ours_range(int first, int last);
+static int palette_is_ours;                     /* the film OS's palette (or a photo's) is in the hardware, not Canon's */
 static void palette_ours()
 {
     palette_ours_range(1, 255);
@@ -651,6 +698,7 @@ static void palette_ours_range(int first, int last)
     if ((opaque >> 24) < 2) opaque = 0x03000000;
     int white_y = (white >> 16) & 0xFF;
     if (white_y < 180) white_y = 235;
+    palette_is_ours = 1;
     for (int i = first; i < last && i < 255; i++)
     {
         uint32_t entry;
@@ -671,6 +719,7 @@ static void palette_ours_range(int first, int last)
 
 static void palette_canon()
 {
+    palette_is_ours = 0;
     for (int i = 1; i < 255; i++)
     {
         EngDrvOut(LCD_Palette[3 * i], LCD_Palette[3 * i + 2]);
@@ -719,51 +768,84 @@ const uint8_t *fos_port_logo(int *w, int *h)
     return logo_bits;
 }
 
-static void film_logo_draw()
+static int film_logo_draw(int with_logo)
 {
     logo_load();
     uint8_t *v = bmp_vram_real();
-    if (!v) return;
+    if (!v) return 0;
     for (int y = 0; y < 480; y++) memset(v + y * BMPPITCH, COLOR_BLACK, 720);
-    if (!logo_bits) return;
-    int row = (logo_w + 7) / 8, ox = (720 - logo_w) / 2, oy = (480 - logo_h) / 2;
-    for (int y = 0; y < logo_h; y++)
-        for (int x = 0; x < logo_w; x++)
-            if (logo_bits[y * row + (x >> 3)] & (0x80 >> (x & 7)))
-                v[(oy + y) * BMPPITCH + ox + x] = COLOR_WHITE;
+    if (!with_logo || !logo_bits) return 1;
+    /* half size, smoothed, exactly as the shutter animation draws it (fos_ui.c shutter_fill), so the logo does not change size
+     * when the film OS takes over: each pixel covers 2 x 2 of the mask */
+    int row = (logo_w + 7) / 8, dw = logo_w / 2, dh = logo_h / 2, ox = (720 - dw) / 2, oy = (480 - dh) / 2;
+#define LOGO_BIT(x, y) ((logo_bits[(y) * row + ((x) >> 3)] & (0x80 >> ((x) & 7))) != 0)
+    for (int y = 0; y < dh; y++)
+        for (int x = 0; x < dw; x++)
+        {
+            int n = LOGO_BIT(2 * x, 2 * y) + LOGO_BIT(2 * x + 1, 2 * y) + LOGO_BIT(2 * x, 2 * y + 1) + LOGO_BIT(2 * x + 1, 2 * y + 1);
+            if (n) v[(oy + y) * BMPPITCH + ox + x] = n == 4 ? COLOR_WHITE : COLOR_GRAY(n * 25);
+        }
+#undef LOGO_BIT
+    return 1;
 }
 
 static void film_ui_open(int open)
 {
     /* the logo only when the main menu opens from Canon's screen, not for a shortcut into Images or the shelf */
     const int show_logo = open == FOS_OPEN_HOME;
+    const int t0 = get_ms_clock();
     NotifyBoxHide();
-    if (show_logo && !lv && DISPLAY_IS_ON) film_logo_draw();     /* cover Canon's screen while the mode changes */
+    dbg("open %d: lv %d display %d bmp %d vram %x", open, lv, DISPLAY_IS_ON, bmp_is_on(), (unsigned) bmp_vram_real());
+    int covered = 0;
+    if (!lv && DISPLAY_IS_ON)                        /* every open from Canon's own screen, the boot shelf too, is covered: black, and the logo for the main menu */
+    {
+        if (!bmp_is_on()) bmp_on();                  /* the first open after boot: the layer may not be showing yet */
+        covered = film_logo_draw(show_logo);
+    }
     if (lv) bmp_off();
     SetGUIRequestMode(GUIMODE_ML_MENU);
     msleep(200);
     canon_gui_disable_front_buffer();
     CancelDateTimer();
-    clrscr();
+    /* clrscr() leaves the layer transparent, and the video layer behind it holds stale memory (noise, 5D III 2026-11-01), so
+     * with the logo cover up it is not cleared at all: the cover is simply drawn again. */
+    if (covered) film_logo_draw(show_logo); else clrscr();
+    const int t1 = get_ms_clock();
     bmp_on();
+    const int t2 = get_ms_clock();
     if (show_logo)
     {
-        film_logo_draw();                           /* and again once the bitmap layer is ours */
+        film_logo_draw(1);                          /* and again once the bitmap layer is ours */
         msleep(450);                                /* a moment to read it before the shutter opens */
     }
     ui_last_mode_poke = get_ms_clock();
+    dbg("open %d: cover %d, switch %d ms, layer on %d ms, total %d ms", open, covered, t1 - t0, t2 - t1, ui_last_mode_poke - t0);
 }
 
+static int canon_held;                          /* Canon's own screen is being kept from drawing (the back screen or LiveView screen is up) */
 static void film_ui_close()
 {
     palette_canon();
+    /* back to the shooting screen: the back screen is painted BEFORE Canon is asked to leave its menu mode, and the shutter animation stays
+     * closed until then. Painted afterwards, Canon's own screen showed through for a moment, with a flash of the last picture's review. */
+    const int to_plate = !FOS_LV_ONLY && plate_enabled && !lv && !is_movie_mode();
+    if (to_plate)
+    {
+        canon_gui_disable_front_buffer();
+        canon_held = 1;
+        hud_dirty = 1;
+        plate_draw(1, 0);
+    }
     if (lv) bmp_off();
     SetGUIRequestMode(0);
     msleep(100);
-    canon_gui_enable_front_buffer(0);
-    clrscr();
-    redraw();
-    if (lv) bmp_on();
+    if (!to_plate)
+    {
+        canon_gui_enable_front_buffer(0);
+        clrscr();
+        redraw();
+        if (lv) bmp_on();
+    }
 }
 
 /* frame times are kept while the film OS runs and logged when it closes:
@@ -838,7 +920,7 @@ void fos_port_sleep(int ms)
     int now = get_ms_clock();
 
     /* the Canon dialog under us times out unless poked (CONFIG_MENU_TIMEOUT_FIX) */
-    if (lv && now - ui_last_mode_poke > 2000)
+    if (ui_running && lv && now - ui_last_mode_poke > 2000)
     {
         SetGUIRequestMode(GUIMODE_ML_MENU);
         ui_last_mode_poke = now;
@@ -851,6 +933,9 @@ void fos_port_sleep(int ms)
         idle_wakeup_reset_counters(-10);
         last_wake = now;
     }
+    /* only while the film OS has the screen: the bake also sleeps through here with the back screen up, and pushing the film OS's
+     * palette then made the back screen flash between its colours and the wrong ones */
+    if (!ui_running) return;
     uint32_t probe = shamem_read(LCD_Palette[3 * PALETTE_PROBE]);
     if ((probe && probe != palette_probe) || now - ui_last_palette > 1000)
     {
@@ -1111,6 +1196,12 @@ static int *setting_var(int s)
         case FS_SCR_WARM:   return &scr_warm;
         case FS_SCR_BRIGHT: return &scr_bright;
         case FS_THEME:      return &ui_theme_cfg;
+        case FS_PLATE:      return &plate_enabled;
+        case FS_PORTRAIT:   return &portrait_cfg;
+        case FS_PLATE_STYLE: return &plate_style;
+        case FS_LVUI:       return &lvui_enabled;
+        case FS_GRAIN:      return &grain_cfg;
+        case FS_HALATION:   return &halation_cfg;
     }
     return 0;
 }
@@ -1134,6 +1225,190 @@ void fos_port_set(int s, int value)
         ui_last_palette = get_ms_clock();
     }
 }
+
+
+#ifndef CONFIG_EOSM
+/* System > Self-test: how much memory the camera can give us and how fast its processor runs the kinds of code we have. It runs
+ * in the film OS task (the screen waits, about ten seconds) and writes the numbers to the log whether or not Debug log is on. */
+static int bench_largest(int tmp)
+{
+    int lo = 0, hi = 24 << 20;
+    while (hi - lo > 64 * 1024)
+    {
+        int mid = (lo + hi) / 2;
+        void *p = tmp ? tmp_malloc(mid) : malloc(mid);
+        if (p) { if (tmp) tmp_free(p); else free(p); lo = mid; }
+        else hi = mid;
+    }
+    return lo;
+}
+
+
+/* the bake's three costs, timed on a made-up picture with the same code the bake runs: JPEG encode, JPEG decode (whole and at
+ * 1/4 scale) and the colour look (a 33 x 33 x 33 table) */
+static void *prof_fp;
+static unsigned prof_pos;
+static size_t prof_read(JDEC *jd, uint8_t *dst, size_t n)
+{
+    (void) jd;
+    if (!dst)
+    {
+        if (fos_port_seek(prof_fp, prof_pos + n) < 0) return 0;
+        prof_pos += n;
+        return n;
+    }
+    int got = fos_port_read(prof_fp, dst, (int) n);
+    if (got <= 0) return 0;
+    prof_pos += got;
+    return (size_t) got;
+}
+static int prof_px;
+static int prof_out(JDEC *jd, void *bitmap, JRECT *r)
+{
+    (void) jd; (void) bitmap;
+    prof_px += (r->right - r->left + 1) * (r->bottom - r->top + 1);
+    return 1;
+}
+static void bake_profile()
+{
+    const int W = 1280, H = 960;
+    uint8_t *rgb = malloc(W * H * 3);
+    if (!rgb) { dbg("selftest: bake profile: no memory for the test picture"); return; }
+    unsigned v = 99u;
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++)
+        {
+            v = v * 1664525u + 1013904223u;
+            int n = (int) (v >> 28) - 8;                                    /* a little noise, like a photograph */
+            uint8_t *p = rgb + (y * W + x) * 3;
+            p[0] = COERCE(128 + (x >> 3) - (y >> 4) + n, 0, 255);
+            p[1] = COERCE(110 + (y >> 3) + n, 0, 255);
+            p[2] = COERCE(90 + ((x + y) >> 4) - n, 0, 255);
+        }
+    const char *path = "ML/PROFILE.JPG";
+    char full[64];
+    snprintf(full, sizeof(full), "%s%s", fos_port_card(), path);
+    int t = get_ms_clock();
+    int ok = fos_jpeg_write(full, rgb, W * 3, W, H, 92, 0);
+    int enc = get_ms_clock() - t;
+    dbg("selftest: encode %d x %d (q92, 4:2:0): %d ms = %d.%d MP/s%s", W, H, enc, enc ? W * H / 1000 / enc : 0, enc ? (W * H / 100 / enc) % 10 : 0, ok ? "" : "  FAILED");
+    free(rgb);
+    if (ok)
+    {
+        uint8_t *pool = malloc(65536);
+        for (int pass = 0; pass < 2 && pool; pass++)
+        {
+            const int scale = pass ? 2 : 0;
+            prof_fp = fos_port_open(full, 0);
+            prof_pos = 0;
+            JDEC jd;
+            if (prof_fp && jd_prepare(&jd, prof_read, pool, 65536, 0) == JDR_OK)
+            {
+                prof_px = 0;
+                t = get_ms_clock();
+                int rc = jd_decomp(&jd, prof_out, scale);
+                int ms = get_ms_clock() - t;
+                dbg("selftest: decode at 1/%d scale: %d ms = %d.%d MP/s of the full picture (rc %d)", 1 << scale, ms, ms ? W * H / 1000 / ms : 0, ms ? (W * H / 100 / ms) % 10 : 0, rc);
+            }
+            else dbg("selftest: decode at 1/%d: could not start", 1 << scale);
+            if (prof_fp) fos_port_close(prof_fp);
+        }
+        free(pool);
+        FIO_RemoveFile(full);
+    }
+    uint8_t *lut = malloc(33 * 33 * 33 * 3);
+    if (lut)
+    {
+        for (int i = 0; i < 33 * 33 * 33; i++)
+        {
+            lut[3 * i] = (i % 33) * 255 / 32; lut[3 * i + 1] = (i / 33 % 33) * 255 / 32; lut[3 * i + 2] = (i / 1089) * 255 / 32;
+        }
+        uint8_t px[3], o[3];
+        unsigned acc = 0;
+        v = 7u;
+        t = get_ms_clock();
+        for (int i = 0; i < 1000000; i++)
+        {
+            v = v * 1664525u + 1013904223u;
+            px[0] = v >> 8; px[1] = v >> 16; px[2] = v >> 24;
+            fos_lut_pixel(lut, px, o);
+            acc += o[0];
+        }
+        int ms = get_ms_clock() - t;
+        dbg("selftest: colour look, 1M different pixels: %d ms = %d.%d MP/s (checksum %d)", ms, ms ? 1000 / ms : 0, ms ? (10000 / ms) % 10 : 0, (int) (acc & 255));
+        /* the same table on smooth runs of pixels (like a photograph) */
+        acc = 0;
+        t = get_ms_clock();
+        for (int i = 0; i < 1000000; i++)
+        {
+            px[0] = (i / 6) & 255; px[1] = (i / 9 + 40) & 255; px[2] = (i / 11 + 90) & 255;
+            fos_lut_pixel(lut, px, o);
+            acc += o[1];
+        }
+        ms = get_ms_clock() - t;
+        dbg("selftest: colour look on smooth runs: %d ms = %d.%d MP/s (checksum %d)", ms, ms ? 1000 / ms : 0, ms ? (10000 / ms) % 10 : 0, (int) (acc & 255));
+        free(lut);
+    }
+}
+
+static void selftest()
+{
+    const int saved = debug_log;
+    debug_log = 1;
+    dbg("selftest: begin, firmware %s %s", __DATE__, __TIME__);
+    dbg("selftest: largest single block: malloc %d KB, tmp_malloc %d KB", bench_largest(0) >> 10, bench_largest(1) >> 10);
+
+    int t = get_ms_clock();
+    volatile unsigned sink = fos_bench_alu(20u * 1000 * 1000);
+    int alu = get_ms_clock() - t;
+    dbg("selftest: 20M integer steps %d ms = %d M steps/s", alu, alu ? 20000 / alu : 0);
+
+    const int size = 256 * 1024;
+    for (int pass = 0; pass < 2; pass++)
+    {
+        const char *name = pass ? "tmp_malloc" : "malloc";
+        uint8_t *a = pass ? tmp_malloc(size) : malloc(size), *b = pass ? tmp_malloc(size) : malloc(size);
+        if (a && b)
+        {
+            fos_bench_fill(a, size);
+            t = get_ms_clock();
+            sink += fos_bench_copy(a, b, size, 64);
+            int copy = get_ms_clock() - t;
+            t = get_ms_clock();
+            sink += fos_bench_stride(a, size, 64);
+            int rd = get_ms_clock() - t;
+            dbg("selftest: %s: copy 16 MB %d ms = %d MB/s; strided read %d ms", name, copy, copy ? 16000 / copy : 0, rd);
+        }
+        else dbg("selftest: %s: could not get 2 x 256 KB", name);
+        if (pass) { if (a) tmp_free(a); if (b) tmp_free(b); }
+        else { free(a); free(b); }
+    }
+
+    /* the Game Boy-shaped loop: what a Game Boy emulator core would roughly cost, with its memory in each heap */
+    const int steps = 4 * 1000 * 1000, gbmem = fos_bench_gb_mem();
+    for (int pass = 0; pass < 2; pass++)
+    {
+        uint8_t *m = pass ? tmp_malloc(gbmem) : malloc(gbmem);
+        if (!m) { dbg("selftest: game boy loop, %s: no memory", pass ? "tmp_malloc" : "malloc"); continue; }
+        fos_bench_fill(m, gbmem);
+        t = get_ms_clock();
+        sink += fos_bench_gb(m, steps);
+        int ms = get_ms_clock() - t;
+        /* a Game Boy does about 1.05 million instructions a second; an emulator also draws and runs timers, so it wants
+         * several times that headroom from this loop alone */
+        int per_s = ms ? (int) ((long long) steps * 1000 / ms) : 0;
+        dbg("selftest: game boy loop, memory in %s: %d steps in %d ms = %d k steps/s = %d.%d x a Game Boy's pace",
+            pass ? "tmp_malloc" : "malloc", steps, ms, per_s / 1000, per_s / 1050000, (per_s / 105000) % 10);
+        if (pass) tmp_free(m); else free(m);
+    }
+    (void) sink;
+    bake_profile();
+    dbg("selftest: end");
+    debug_log = saved;
+}
+#else
+static void selftest() { }            /* left out of the EOS M build: it must stay under the camera's boot size limit */
+#endif
 
 void fos_port_action(int action, int a, int b)
 {
@@ -1159,6 +1434,9 @@ void fos_port_action(int action, int a, int b)
             break;
         case FA_CANON_MENU:
             ui_after |= AFTER_CANON_MENU;
+            break;
+        case FA_SELFTEST:
+            selftest();
             break;
     }
 }
@@ -1226,6 +1504,18 @@ void fos_port_stat(const struct fos_stat *s)
 
 static volatile int hud_showing = 0;    /* HUD drawn on the LiveView screen */
 
+/* the back screen as a top plate: LiveView off, nothing else of ours on screen (and Canon's own screens left alone) */
+static int lvui_visible()
+{
+    return lvui_enabled && plate_style == 1 && lv && display_idle() && !is_movie_mode() && !ui_running;
+}
+static int plate_visible()
+{
+    /* DISPLAY_IS_ON is not asked: it reads 0 whenever the camera's own screen is switched off (and while Canon's idle screen is up), and the
+     * back screen is drawn regardless */
+    return !FOS_LV_ONLY && plate_enabled && !lv && display_idle() && !is_movie_mode() && !ui_running;      /* never on a LiveView-only camera */
+}
+
 static int hud_visible()
 {
     return hud_enabled && roll_loaded && lv && display_idle() && !is_movie_mode() && !ui_running;
@@ -1270,6 +1560,7 @@ static void shutter_led(char *buf, int size)
 
 static void hud_draw(int lit, int blink)
 {
+    if (palette_is_ours) palette_canon();       /* the readouts use Canon's colours: after a review the photo's palette may still be in the hardware */
     struct fos_hud h;
     memset(&h, 0, sizeof(h));
     h.lit = lit;
@@ -1289,9 +1580,138 @@ static void hud_draw(int lit, int blink)
     h.need_wind = need_wind;
     h.focus_screen = focus_screen;
     h.film = fos_films[COERCE(roll_film, 0, fos_nfilms - 1)].name;
+    h.grain = COERCE(grain_cfg, 0, 3);
+    h.halation = COERCE(halation_cfg, 0, 3);
     uint8_t *vram = bmp_vram();
     if (vram)
         fos_hud_draw(vram, BMPPITCH, &h, &hud_pal);
+}
+
+
+static const char *wb_text(char *buf, int size)
+{
+    static const char *const names[] = { "AUTO", "SUNNY", "CLOUDY", "TUNGSTEN", "FLUOR", "FLASH", "CUSTOM", "?", "SHADE" };
+    if (lens_info.wb_mode == WB_KELVIN) snprintf(buf, size, "%dK", lens_info.kelvin);
+    else snprintf(buf, size, "%s", lens_info.wb_mode <= 8 ? names[lens_info.wb_mode] : "?");
+    return buf;
+}
+
+/* the look menu (the lens button): 9 rows around the chosen look */
+static int look_menu_open, look_menu_until;
+static int lens_button_ms;                      /* when the lens button last sent its events (0 = not recently) */
+static void next_look_in_category();
+static int mfn_pending_ms, last_key_ms;
+static int plate_fast_until;                    /* after a button, the back screen is repaired every 60 ms for a while: Canon redraws its own screen then */
+static int exp_sig_last, exp_change_ms, dof_last, dof_change_ms;   /* the dial's mark; and the depth-of-field button's (the lens button) */        /* when the shutter, aperture, ISO or exposure compensation last changed: the dial's mark */         /* an "other button" event waiting to be told from the dial's own noise (see handle_filmroll_keys) */
+static char look_menu_text[9][40];
+static void plate_fill(struct fos_hud *h, int lit, int blink)
+{
+    memset(h, 0, sizeof(*h));
+    if (look_menu_open && fos_nfilms > 0)
+    {
+        /* the looks of the current category, up to nine around the chosen one */
+        const int n = fos_nfilms, cur = COERCE(film_sel, 0, n - 1), group = fos_films[cur].group;
+        int idx[256], count = 0, pos = 0;
+        for (int i = 0; i < n && count < 256; i++)
+            if (fos_films[i].group == group) { if (i == cur) pos = count; idx[count++] = i; }
+        const int rows = count < 9 ? count : 9, first = count < 9 ? 0 : -4;
+        for (int r = 0; r < rows; r++)
+        {
+            const struct fos_film *f = &fos_films[idx[((pos + first + r) % count + count) % count]];
+            snprintf(look_menu_text[r], sizeof(look_menu_text[r]), "%s%s%s", f->brand, f->brand[0] ? " " : "", f->name);
+            h->menu_name[r] = look_menu_text[r];
+        }
+        h->menu_n = rows;
+        h->menu_row = count < 9 ? pos : 4;
+        h->menu_title = fos_group_names[COERCE(group, 0, FOS_NGROUPS - 1)];
+    }
+    h->lit = 1;                                 /* the plate's readouts are always lit; `lit` (half-press) only turns the meter on */
+    h->blink = blink;
+    h->fstop = current_fstop();
+    {   /* the meter is always on: the pointer follows the last reading, which Canon keeps between half-presses */
+        int ev8 = get_ae_value();
+        h->meter = 1;
+        h->want = h->fstop + (ev8 * 3 + (ev8 >= 0 ? 4 : -4)) / 8;
+    }
+    shutter_led(h->shutter, sizeof(h->shutter));
+    h->frame = (int) bake_head;                 /* pictures taken since the camera was switched on */
+    h->film = fos_films[COERCE(film_sel, 0, fos_nfilms - 1)].name;
+    h->grain = COERCE(grain_cfg, 0, 3);
+    h->halation = COERCE(halation_cfg, 0, 3);
+    h->iso = lens_info.iso;
+    struct fos_bake_info bi;
+    fos_port_bake_info(&bi);
+    h->bake_queued = bi.queued; h->bake_active = bi.active; h->bake_paused = bi.paused; h->bake_percent = bi.percent;
+    fos_port_bake_status(h->status, sizeof(h->status));
+    snprintf(h->mode, sizeof(h->mode), "%s", get_shootmode_name_short(shooting_mode));
+    {   /* the picture quality, named the way ML names it (DIGIC 5 layout) */
+        const int pq = pic_quality, raw = pq & 0x60000, jpg = pq & 0x10000, rawsize = pq & 0xF, js = (pq >> 8) & 0xFF;
+        const char *rs = rawsize == 1 ? "mRAW" : rawsize == 2 ? "sRAW" : rawsize == 7 ? "sRAW1" : rawsize == 8 ? "sRAW2" : raw ? "RAW" : "";
+        const char *js_ = !jpg ? "" : js == 0 ? "L" : js == 1 ? "M" : js == 2 ? "S" : js == 0x0e ? "S1" : js == 0x0f ? "S2" : js == 0x10 ? "S3" : "?";
+        snprintf(h->quality, sizeof(h->quality), "%s%s%s", rs, raw && jpg ? "+" : "", js_);
+        h->quality_fine = (pq >> 24) == 3;
+    }
+    h->focal = lens_info.focal_len;
+    wb_text(h->wb, sizeof(h->wb));
+    h->battery = GetBatteryLevel ? GetBatteryLevel() : -1;
+    h->style = COERCE(plate_style, 0, 1);
+    h->shots_left = avail_shot > 0 ? avail_shot : -1;
+    fos_port_clock(h->clock, sizeof(h->clock));
+}
+
+/* the plate's accent follows the colour theme, from Canon's own palette entries (red; its burnt orange, entry 4; green): Canon's
+ * palette has nothing brighter, and the LiveView HUD stays red */
+static uint8_t *plate_buf;
+static void plate_draw_ex(int lit, int blink, int lvmode)
+{
+    if (palette_is_ours) palette_canon();       /* after a review the photo's palette may still be in the hardware: the plate would show in its colours */
+    static const uint8_t accent[3][2] = { { COLOR_RED, COLOR_DARK_RED }, { 4, 4 }, { COLOR_GREEN2, COLOR_GREEN1 } };
+    struct fos_hud h;
+    plate_fill(&h, lit, blink);
+    const int t = COERCE(ui_theme_cfg, 0, 2);
+    hud_pal.red = accent[t][0];
+    hud_pal.dark_red = accent[t][1];
+    hud_pal.alert = COLOR_RED;
+    /* drawn in a buffer of its own and copied across in one go: clearing and redrawing on the live screen showed as a flicker */
+    uint8_t *vram = bmp_vram();
+    if (vram)
+    {
+        if (!plate_buf) plate_buf = fos_port_alloc_hot(720 * 480);
+        if (plate_buf)
+        {
+            if (lvmode) fos_hud_lv(plate_buf, 720, &h, &hud_pal); else fos_hud_plate(plate_buf, 720, &h, &hud_pal);
+            /* only the rows that changed are written: a status line or a bar moving must not rewrite the whole screen (that showed as a flash) */
+            for (int y = 0; y < 480; y++)
+                if (memcmp(vram + y * BMPPITCH, plate_buf + y * 720, 720))
+                    memcpy(vram + y * BMPPITCH, plate_buf + y * 720, 720);
+        }
+        else if (lvmode) fos_hud_lv(vram, BMPPITCH, &h, &hud_pal);
+        else fos_hud_plate(vram, BMPPITCH, &h, &hud_pal);
+    }
+    hud_pal.red = COLOR_RED;
+    hud_pal.dark_red = COLOR_DARK_RED;
+}
+static void plate_draw(int lit, int blink) { plate_draw_ex(lit, blink, 0); }
+
+/* what the plate shows that the main signature does not cover, as one number (redraw when it changes) */
+static int plate_sig()
+{
+    struct fos_hud h;
+    plate_fill(&h, 0, 0);
+    unsigned v = 2166136261u;
+    const int parts[] = { pic_quality, h.bake_queued, h.bake_active, h.bake_paused, h.bake_percent, h.iso, h.focal, h.battery, h.shots_left,
+                          shooting_mode, plate_style, look_menu_open, film_sel, (int) lens_info.wb_mode, (int) lens_info.kelvin, h.clock[3] * 256 + h.clock[4], h.clock[1] };
+    for (unsigned i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) v = (v ^ (unsigned) parts[i]) * 16777619u;
+    return (int) (v ^ (unsigned) h.status[0] << 3);
+}
+
+static void plate_clear()
+{
+    uint8_t *vram = bmp_vram();
+    if (vram)
+        fos_hud_plate_clear(vram, BMPPITCH, &hud_pal);
+    fos_port_free(plate_buf);                   /* the buffer is only held while the plate is up */
+    plate_buf = 0;
 }
 
 static void hud_clear()
@@ -1302,21 +1722,105 @@ static void hud_clear()
 }
 
 /* one HUD refresh; called from the main loop */
+static int bake_queued_now(void)
+{
+    struct fos_bake_info bi;
+    fos_port_bake_info(&bi);
+    return bi.queued;
+}
+
+/* Canon clears its "do not repaint the screen" flag now and then (its own redraws of the shooting screen do), and then paints its stock shooting
+ * screen over ours until our next repair: the random flashing. Checked every 50 ms: the flag is set again and the screen painted at once. */
+static void plate_guard()
+{
+    if (!canon_held || ui_running) return;
+    const int plate = plate_visible(), lvui = !plate && lvui_visible();
+    if (!plate && !lvui) return;
+    if (canon_gui_front_buffer_disabled()) return;
+    static int logged;
+    if (logged < 60) { logged++; dbg("Canon let go of its screen: taken back (back screen %d, LiveView screen %d)", plate, lvui); }
+    canon_gui_disable_front_buffer();
+    plate_fast_until = get_ms_clock() + 800;
+    hud_dirty = 1;
+    if (plate) plate_draw(1, 0); else plate_draw_ex(1, 0, 1);
+}
+
 static void hud_step()
 {
-    static int last_sig = -1;
+    if (lens_button_ms)
+    {
+        const int t = get_ms_clock();
+        static int wake_try;
+        if (t - lens_button_ms > 4000) lens_button_ms = 0;
+        else if (!lv && !ui_running && !DISPLAY_IS_ON && t - wake_try > 600) { wake_try = t; display_on(); dbg("screen was off after the lens button: turned on"); }
+    }
+    {   /* the lens button is the depth-of-field button: it changes Canon's depth-of-field property, and M-Fn does not */
+        const int d = dofpreview;
+        if (d != dof_last) { dof_last = d; dof_change_ms = get_ms_clock(); }
+    }
+    {   /* the dial changes the exposure settings; M-Fn does not. Note when they last changed. */
+        const int sig = lens_info.raw_shutter * 65536 + lens_info.raw_aperture * 256 + lens_info.raw_iso + get_ae_value() * 7919;
+        if (sig != exp_sig_last) { exp_sig_last = sig; exp_change_ms = get_ms_clock(); }
+    }
+    if (mfn_pending_ms && get_ms_clock() - mfn_pending_ms >= 300)
+    {
+        const int dial = exp_change_ms && ABS(exp_change_ms - mfn_pending_ms) < 700;
+        if (dial) { mfn_pending_ms = 0; dbg("other-button event dropped: the exposure settings changed %d ms from it (the dial)", exp_change_ms - mfn_pending_ms); }
+    }
+    if (mfn_pending_ms && get_ms_clock() - mfn_pending_ms >= 300)
+    {
+        /* M-Fn and the lens button send the same event and nothing else tells them apart (the log shows no other event and no change of
+         * the depth-of-field property), so either one opens the look list: a full film OS screen, where the joystick, the dial and SET
+         * are delivered like anywhere in the film OS */
+        mfn_pending_ms = 0;
+        if (plate_visible()) { dbg("look list: opening (the button under the lens, or M-Fn)"); open_ui(FOS_OPEN_LOOKS); }
+    }
+    if (look_menu_open && get_ms_clock() > look_menu_until) { look_menu_open = 0; hud_dirty = 1; dbg("look menu closed (idle)"); }
+    if (look_menu_open && !plate_visible()) { look_menu_open = 0; hud_dirty = 1; dbg("look menu closed (back screen left: lv %d idle %d ui %d)", lv, display_idle(), ui_running); }
+    static int last_sig = -1, last_sig2 = -1;
     static int last_draw = 0;
     static int drawn = 0;
     static int was_visible = -1;
+    static int plate_drawn = 0, gone_since = 0;
 
-    int visible = hud_visible();
+    const int plate = plate_visible(), lvui = lvui_visible();
+    static int was_lvui = 0;
+    if (lvui != was_lvui) { was_lvui = lvui; hud_dirty = 1; }
+    int visible = plate || lvui || hud_visible();
     if (visible != was_visible)
     {
-        dbg("hud: visible %d (enabled %d roll %d lv %d movie %d ui %d)",
-            visible, hud_enabled, roll_loaded, lv, is_movie_mode(), ui_running);
+        dbg("hud: visible %d plate %d (enabled %d roll %d lv %d movie %d ui %d idle %d display %d)",
+            visible, plate, hud_enabled, roll_loaded, lv, is_movie_mode(), ui_running, display_idle(), DISPLAY_IS_ON);
         was_visible = visible;
     }
     hud_showing = visible;
+
+    /* the plate covers Canon's own info screen, so Canon is kept from drawing it while the plate is up, and gets the screen back
+     * some time after (the way M-Film does it) */
+    {
+        const int tnow = get_ms_clock();
+        if ((plate || lvui) && !canon_held)          /* in LiveView too: Canon's own overlay drew over ours now and then */
+        {
+            canon_gui_disable_front_buffer();
+            clrscr();
+            canon_held = 1;
+            hud_dirty = 1;
+            gone_since = 0;
+        }
+        else if (!plate && !lvui && canon_held)
+        {
+            if (ui_running) { canon_held = 0; gone_since = 0; }                         /* the film OS has taken the screen itself */
+            else if (!gone_since) gone_since = tnow;
+            else if (tnow - gone_since > 3000) { canon_gui_enable_front_buffer(1); canon_held = 0; gone_since = 0; }      /* 3 s, not 0.7: a short gap (Canon changing state) must not hand Canon its screen back, it showed as its shooting screen glitching in */
+        }
+        else gone_since = 0;
+    }
+    if (plate_drawn && !plate && !lvui && display_idle() && !ui_running)
+    {
+        plate_clear();
+        plate_drawn = 0;
+        last_sig = -1;
+    }
 
     if (!visible)
     {
@@ -1334,18 +1838,24 @@ static void hud_step()
     int now = get_ms_clock();
     int lit = !leds_on_half || get_halfshutter_pressed() || now < leds_until;
     int blink = (now / 400) % 2;
-    int ev8 = lit ? get_ae_value() : 0;
+    if ((plate || lvui) && !bake_queued_now()) blink = 0;           /* nothing on the plate pulses unless a bake is waiting */
+    int ev8 = (lit || plate || lvui) ? get_ae_value() : 0;
+    if (plate || lvui) ev8 = (ev8 * 3 + (ev8 >= 0 ? 4 : -4)) / 8;        /* the plate only needs the pointer's third of a stop: redraw when that moves, not on every tiny reading */
 
     int sig = lit | blink << 1 | need_wind << 2 | (frames_shot & 0xFF) << 3
             | lens_info.raw_shutter << 11 | (ev8 & 0xFF) << 19 | (current_fstop() & 0x1F) << 27;
 
     /* redraw on change, and every second to win over Canon's overlays */
-    if (sig != last_sig || hud_dirty || now - last_draw > 1000)
+    const int sig2 = plate || lvui ? plate_sig() : 0;
+    if (sig != last_sig || sig2 != last_sig2 || hud_dirty || now - last_draw > (now < plate_fast_until ? 60 : 1000))
     {
         hud_dirty = 0;
         last_sig = sig;
+        last_sig2 = sig2;
         last_draw = now;
-        hud_draw(lit, blink);
+        if (plate) { plate_draw(lit, blink); plate_drawn = 1; }
+        else if (lvui) { plate_draw_ex(lit, blink, 1); plate_drawn = 1; }
+        else hud_draw(lit, blink);
     }
 }
 
@@ -1406,9 +1916,46 @@ static int ui_key(struct event *event, int key)
     return 0;
 }
 
+static void step_look(int dir)
+{
+    const int n = fos_nfilms;
+    if (n < 2) return;
+    film_sel = roll_film = (COERCE(film_sel, 0, n - 1) + dir + n) % n;
+    leds_until = get_ms_clock() + 2000;
+    hud_dirty = 1;
+    dbg("look stepped: %d %s", film_sel, fos_films[film_sel].name);
+}
+
 static unsigned int lv_key(unsigned int key)
 {
     if (dev_busy) return 1;
+    /* the look menu (opened with M-Fn, see handle_filmroll_keys): the dial chooses, each step takes effect at once; SET, the shutter
+     * or four idle seconds close it */
+    if (look_menu_open)
+    {
+        look_menu_until = get_ms_clock() + 4000;
+        switch (key)
+        {
+            case MODULE_KEY_WHEEL_LEFT:
+            case MODULE_KEY_WHEEL_UP:
+            case MODULE_KEY_PRESS_UP:
+            case MODULE_KEY_PRESS_LEFT:  step_look(-1); return 0;
+            case MODULE_KEY_WHEEL_RIGHT:
+            case MODULE_KEY_WHEEL_DOWN:
+            case MODULE_KEY_PRESS_DOWN:
+            case MODULE_KEY_PRESS_RIGHT: step_look(1); return 0;
+            case MODULE_KEY_JOY_CENTER:
+            case MODULE_KEY_PRESS_SET:
+            case MODULE_KEY_Q:
+            case MODULE_KEY_MENU:
+            case MODULE_KEY_PLAY:
+            case MODULE_KEY_TRASH:       look_menu_open = 0; hud_dirty = 1; dbg("look menu closed (key %d)", key); return 0;
+            case MODULE_KEY_PRESS_HALFSHUTTER:
+            case MODULE_KEY_PRESS_FULLSHUTTER: look_menu_open = 0; hud_dirty = 1; dbg("look menu closed (shutter)"); return 1;     /* shoot as usual */
+            default: return 1;
+        }
+    }
+
     /* what used to open the Magic Lantern menu opens home instead */
     if (key == MODULE_KEY_TRASH || key == MODULE_KEY_TOUCH_2_FINGER)
     {
@@ -1480,6 +2027,26 @@ static unsigned int lv_key(unsigned int key)
     return 1;
 }
 
+/* the button under the lens: the next look in the same category (colour, slide, B&W, cine, presets), wrapping round */
+static void next_look_in_category()
+{
+    const int n = fos_nfilms;
+    if (n < 2) return;
+    const int cur = COERCE(film_sel, 0, n - 1), group = fos_films[cur].group;
+    for (int k = 1; k < n; k++)
+    {
+        const int j = (cur + k) % n;
+        if (fos_films[j].group == group)
+        {
+            film_sel = roll_film = j;
+            leds_until = get_ms_clock() + 2000;
+            hud_dirty = 1;
+            dbg("lens button: next look in its category: %d %s", j, fos_films[j].name);
+            return;
+        }
+    }
+}
+
 int handle_filmroll_keys(struct event *event)
 {
     int key = module_translate_key(event->param, MODULE_KEY_PORTABLE);
@@ -1499,8 +2066,43 @@ int handle_filmroll_keys(struct event *event)
         return ui_key(event, key);
     }
 
+#ifdef GMT_GUICMD_PRESS_BUTTON_SOMETHING
+    /* M-Fn (and the top screen's light button) arrive as Canon's generic "other button" event, but so does some of the dial's and
+     * joystick's own traffic (the menu popped up while turning the dial). So the event only counts when no ordinary key came within
+     * a quarter of a second before or after it: it is held for 200 ms and hud_step acts on it if nothing else happened. While the back
+     * screen is up the event is kept from Canon, so Canon's own M-Fn pop-up does not appear. */
+    if (event->param == GMT_GUICMD_PRESS_BUTTON_SOMETHING && !dev_busy)
+    {
+        const int t = get_ms_clock();
+        plate_fast_until = t + 1500;
+        {
+            static int seen;
+            if (seen < 100) { seen++; dbg("other-button event: arg %x (back screen %d)", event->arg, plate_visible()); }
+        }
+        if (!plate_visible() && !look_menu_open) { return 1; }
+        if (t - last_key_ms < 300) { dbg("other-button event dropped: another event came just before"); return 1; }
+        mfn_pending_ms = t;
+        return 0;
+    }
+#endif
     if (!key)
+    {
+        static int unknown;                     /* what the camera sends for buttons we do not know: every kind except the screen refresh (67), for the log */
+        if (event->param != 0x67)
+        {
+            /* the dial and the joystick on the shooting screen come as events like these, not as keys: any of them near an "other
+             * button" event means it was not M-Fn */
+            last_key_ms = get_ms_clock();
+            plate_fast_until = last_key_ms + 1500;
+            if (mfn_pending_ms && last_key_ms - mfn_pending_ms < 300) { mfn_pending_ms = 0; dbg("other-button event dropped: event %x came with it", event->param); }
+            if (unknown < 300) { unknown++; dbg("key event not translated: %x (arg %x)", event->param, event->arg); }
+        }
         return 1;
+    }
+
+    last_key_ms = get_ms_clock();
+    plate_fast_until = last_key_ms + 1500;
+    if (mfn_pending_ms && last_key_ms - mfn_pending_ms < 250) { mfn_pending_ms = 0; dbg("other-button event dropped: a key came with it (key %d)", key); }
 
     /* newer firmware may group several wheel clicks into one event */
     int count = 1;
@@ -1557,6 +2159,17 @@ static void load_fonts()
     dbg("fonts: %d bytes, %s", size, blob ? "loaded" : "not usable");
 }
 
+/* the first start (no look chosen yet) opens on Cold Vibes; a card without it falls back to the first film */
+static void resolve_default_look()
+{
+    if (film_sel >= 0) return;
+    int pick = 0;
+    for (int i = 0; i < fos_nfilms; i++)
+        if (!strcmp(fos_films[i].key, "mh_cold")) { pick = i; break; }
+    film_sel = roll_film = pick;
+    dbg("look: first start, %s", fos_films[pick].name);
+}
+
 /* the films beyond the built-in ones, from the card; the file stays in
  * memory (the films point into it) */
 static void load_films()
@@ -1566,6 +2179,7 @@ static void load_films()
     if (!raw)
     {
         dbg("films: ML/DATA/%s not found, the built-in ones only", FOS_FILM_FILE);
+        resolve_default_look();
         return;
     }
     uint8_t *blob = malloc(size);
@@ -1580,6 +2194,7 @@ static void load_films()
     }
     fio_free(raw);
     dbg("films: %d (%d bytes, %s)", fos_nfilms, size, blob ? "loaded" : "not usable");
+    resolve_default_look();
 }
 
 /* the film OS is the camera's start screen */
@@ -1648,6 +2263,7 @@ static void filmroll_task()
             }
         }
         else if (end_due && !ROLL_FINISHED) end_due = 0;
+        plate_guard();                      /* every 50 ms */
         if (k % 2 == 0)
             hud_step();                     /* every 100 ms */
 

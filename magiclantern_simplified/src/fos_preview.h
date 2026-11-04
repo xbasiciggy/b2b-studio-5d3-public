@@ -30,6 +30,29 @@ int fos_preview_exists(const char *);   /* a valid current-format cache sits bes
 int fos_preview_final(const char *);    /* ...and it is the full-size one, not the early small review */
 void fos_lut_pixel(const uint8_t *, const uint8_t *, uint8_t *);            /* tetrahedral */
 void fos_lut_pixel_trilinear(const uint8_t *, const uint8_t *, uint8_t *);  /* reference, for tests */
+/* The review being built, readable while it is decoded: the picture's own colours, rows from the top as they are
+ * averaged down. The review screen paints them with a fixed colour cube (fos_live_paint) and swaps to the finished
+ * cache when it lands. The builder keeps the rows valid until the screen has taken the last ones (acked), or 600 ms. */
+struct fos_live {
+    volatile int serial;                /* counts builds; the screen compares it to know it is still the same one */
+    volatile int active;                /* rgb is valid */
+    volatile int reading;               /* the screen is looking at rgb */
+    volatile int finishing, acked;      /* all rows are in; the screen has taken them */
+    volatile int rows;                  /* complete output rows, from the top */
+    volatile int result;                /* 0 building, 1 saved, 2 failed */
+    volatile int paint_orient;          /* the screen's own orientation for painting (0: the picture's); set to 1 to show a portrait picture sideways */
+    int w, h, orientation;
+    const uint8_t *rgb;
+    char name[13];                      /* Pssssfff.JPG, the review's file name */
+};
+extern struct fos_live fos_live;
+void fos_live_begin(const struct fos_preview *, int orientation, const char *name);
+void fos_live_progress(const struct fos_preview *);
+void fos_live_end(struct fos_preview *);
+/* paint output rows from..to-1 into a 720 x 480 picture of palette indices 1..216 (the colour cube), rotated and fitted
+ * the way a finished cache is; pixels outside them are left alone */
+void fos_live_paint(uint8_t *dst, int from, int to);
+void fos_live_cube(uint8_t pal[216][3]);
 int fos_quick_preview(const char *, const char *, int);
 int fos_plain_preview(const char *);    /* cache for a finished JPEG: no LUT is applied again */
 /* Reduce a w x h RGB picture to a palette of its own (as the review cache does). 1 on success; free with fos_preview_free. */

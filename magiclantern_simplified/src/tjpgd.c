@@ -24,6 +24,7 @@
 /                     Some performance improvement.
 /----------------------------------------------------------------------------*/
 
+#pragma GCC optimize ("O2")   /* hot pixel loops: the camera build is -Os */
 #include "tjpgd.h"
 
 
@@ -163,7 +164,7 @@ static JRESULT create_qt_tbl (	/* 0:OK, !0:Failed */
 {
 	unsigned int i, zi;
 	uint8_t d;
-	int32_t *pb;
+	int32_t *pb, *pr;
 
 
 	while (ndata) {	/* Process all tables in the segment */
@@ -175,8 +176,12 @@ static JRESULT create_qt_tbl (	/* 0:OK, !0:Failed */
 		pb = alloc_pool(jd, 64 * sizeof (int32_t));/* Allocate a memory block for the table */
 		if (!pb) return JDR_MEM1;				/* Err: not enough memory */
 		jd->qttbl[i] = pb;						/* Register the table */
+		pr = alloc_pool(jd, 64 * sizeof (int32_t));
+		if (!pr) return JDR_MEM1;
+		jd->qraw[i] = pr;
 		for (i = 0; i < 64; i++) {				/* Load the table */
 			zi = Zig[i];						/* Zigzag-order to raster-order conversion */
+			pr[zi] = (int32_t)((uint32_t)*data << 8);	/* Plain dequantizer, so d * pr >> 8 is the coefficient itself */
 			pb[zi] = (int32_t)((uint32_t)*data++ * Ipsf[zi]);	/* Apply scale factor of Arai algorithm to the de-quantizers */
 		}
 	}
@@ -588,6 +593,13 @@ static void block_idct (
 
 	/* Process columns */
 	for (i = 0; i < 8; i++) {
+		if (!(src[8 * 1] | src[8 * 2] | src[8 * 3] | src[8 * 4] | src[8 * 5] | src[8 * 6] | src[8 * 7])) {
+			/* only the DC term: every output of the column is that value (what the full calculation gives, without it) */
+			v0 = src[0];
+			src[8 * 1] = src[8 * 2] = src[8 * 3] = src[8 * 4] = src[8 * 5] = src[8 * 6] = src[8 * 7] = v0;
+			src++;
+			continue;
+		}
 		v0 = src[8 * 0];	/* Get even elements */
 		v1 = src[8 * 2];
 		v2 = src[8 * 4];
@@ -635,6 +647,12 @@ static void block_idct (
 	/* Process rows */
 	src -= 8;
 	for (i = 0; i < 8; i++) {
+		if (!(src[1] | src[2] | src[3] | src[4] | src[5] | src[6] | src[7])) {
+			jd_yuv_t flat = (jd_yuv_t)((src[0] + (128L << 8)) >> 8);	/* a flat row */
+			dst[0] = dst[1] = dst[2] = dst[3] = dst[4] = dst[5] = dst[6] = dst[7] = flat;
+			dst += 8; src += 8;
+			continue;
+		}
 		v0 = src[0] + (128L << 8);	/* Get even elements (remove DC offset (-128) here) */
 		v1 = src[2];
 		v2 = src[4];
@@ -695,6 +713,48 @@ static void block_idct (
 
 
 
+
+/*-----------------------------------------------------------------------*/
+/* Reduced-size inverse DCT: only the lowest NxN coefficients (N = 4 at   */
+/* 1/2 scale, 2 at 1/4) give an NxN block, the same picture a box filter  */
+/* of the full block would, for a fraction of the work. src holds plain   */
+/* coefficients (see qraw); the result is packed N*N in dst.             */
+/*-----------------------------------------------------------------------*/
+
+static void block_idct_small (
+	const int32_t* src,
+	jd_yuv_t* dst,
+	int n
+)
+{
+	static const int32_t M4[4][4] = {{1448,1892,1448,784},{1448,784,-1448,-1892},{1448,-784,-1448,1892},{1448,-1892,1448,-784}};
+	int32_t t[4][4];
+	int x, y, u, v;
+
+	if (n == 4) {
+		for (u = 0; u < 4; u++)
+			for (y = 0; y < 4; y++) {
+				int32_t a = 0;
+				for (v = 0; v < 4; v++) a += M4[y][v] * src[v * 8 + u];
+				t[y][u] = a >> 6;
+			}
+		for (y = 0; y < 4; y++)
+			for (x = 0; x < 4; x++) {
+				int32_t a = 0;
+				for (u = 0; u < 4; u++) a += M4[x][u] * t[y][u];
+				dst[y * 4 + x] = (jd_yuv_t)(((a + (1 << 17)) >> 18) + 128);
+			}
+	} else {
+		int32_t c0 = src[0], c1 = src[1], c2 = src[8], c3 = src[9];
+		int32_t a0 = (c0 + c2) * 1448 >> 6, a1 = (c1 + c3) * 1448 >> 6;	/* top row of columns... */
+		int32_t b0 = (c0 - c2) * 1448 >> 6, b1 = (c1 - c3) * 1448 >> 6;
+		dst[0] = (jd_yuv_t)((((a0 + a1) * 1448 + (1 << 17)) >> 18) + 128);
+		dst[1] = (jd_yuv_t)((((a0 - a1) * 1448 + (1 << 17)) >> 18) + 128);
+		dst[2] = (jd_yuv_t)((((b0 + b1) * 1448 + (1 << 17)) >> 18) + 128);
+		dst[3] = (jd_yuv_t)((((b0 - b1) * 1448 + (1 << 17)) >> 18) + 128);
+	}
+}
+
 /*-----------------------------------------------------------------------*/
 /* Load all blocks in an MCU into working buffer                         */
 /*-----------------------------------------------------------------------*/
@@ -735,7 +795,7 @@ static JRESULT mcu_load (
 				d += e;								/* Get current value */
 				jd->dcv[cmp] = (int16_t)d;			/* Save current DC value for next block */
 			}
-			dqf = jd->qttbl[jd->qtid[cmp]];			/* De-quantizer table ID for this component */
+			dqf = (JD_USE_SCALE && (jd->scale == 1 || jd->scale == 2)) ? jd->qraw[jd->qtid[cmp]] : jd->qttbl[jd->qtid[cmp]];	/* De-quantizer table of this component (plain at 1/2 and 1/4) */
 			tmp[0] = d * dqf[0] >> 8;				/* De-quantize, apply scale factor of Arai algorithm and descale 8 bits */
 
 			/* Extract following 63 AC elements from input stream */
@@ -759,7 +819,14 @@ static JRESULT mcu_load (
 			} while (++z < 64);		/* Next AC element */
 
 			if (JD_FORMAT != 2 || !cmp) {	/* C components may not be processed if in grayscale output */
-				if (z == 1 || (JD_USE_SCALE && jd->scale == 3)) {	/* If no AC element or scale ratio is 1/8, IDCT can be ommited and the block is filled with DC value */
+				if (JD_USE_SCALE && (jd->scale == 1 || jd->scale == 2)) {	/* Reduced IDCT from plain coefficients */
+					if (z == 1) {
+						d = (jd_yuv_t)(((*tmp + 4) >> 3) + 128);
+						for (i = 0; i < 16; bp[i++] = d) ;
+					} else {
+						block_idct_small(tmp, bp, 8 >> jd->scale);
+					}
+				} else if (z == 1 || (JD_USE_SCALE && jd->scale == 3)) {	/* If no AC element or scale ratio is 1/8, IDCT can be ommited and the block is filled with DC value */
 					d = (jd_yuv_t)((*tmp / 256) + 128);
 					if (JD_FASTDECODE >= 1) {
 						for (i = 0; i < 64; bp[i++] = d) ;
@@ -777,6 +844,7 @@ static JRESULT mcu_load (
 
 	return JDR_OK;	/* All blocks have been loaded successfully */
 }
+
 
 
 
@@ -812,7 +880,22 @@ static JRESULT mcu_output (
 	rect.top = y; rect.bottom = y + ry - 1;
 
 
-	if (!JD_USE_SCALE || jd->scale != 3) {	/* Not for 1/8 scaling */
+	if (JD_USE_SCALE && (jd->scale == 1 || jd->scale == 2) && JD_FORMAT != 2) {	/* blocks are N x N packed: convert only the pixels that are kept */
+		unsigned int n = 8 >> jd->scale, cw = jd->msx, ch = jd->msy;
+		unsigned int nby = jd->msx * jd->msy, px, py2;
+		const jd_yuv_t *yb = jd->mcubuf, *cbp = jd->mcubuf + 64 * nby;
+		pix = (uint8_t*)jd->workbuf;
+		for (py2 = 0; py2 < ch * n; py2++) {
+			for (px = 0; px < cw * n; px++) {
+				unsigned int ci = (py2 / ch) * n + px / cw;
+				cb = cbp[ci] - 128; cr = cbp[64 + ci] - 128;
+				yy = yb[((py2 / n) * cw + px / n) * 64 + (py2 % n) * n + px % n];
+				*pix++ = BYTECLIP(yy + ((int)(1.402 * CVACC) * cr) / CVACC);
+				*pix++ = BYTECLIP(yy - ((int)(0.344 * CVACC) * cb + (int)(0.714 * CVACC) * cr) / CVACC);
+				*pix++ = BYTECLIP(yy + ((int)(1.772 * CVACC) * cb) / CVACC);
+			}
+		}
+	} else if (!JD_USE_SCALE || jd->scale != 3) {	/* Not for 1/8 scaling */
 		pix = (uint8_t*)jd->workbuf;
 
 		if (JD_FORMAT != 2) {	/* RGB output (build an RGB MCU from Y/C component) */

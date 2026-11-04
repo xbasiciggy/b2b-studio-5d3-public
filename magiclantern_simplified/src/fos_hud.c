@@ -169,6 +169,7 @@ static void look_badge(int bx, int by, const struct fos_hud *h)
 
 /* ---------------------------------------------------------------- the HUD */
 
+#ifndef CONFIG_EOSM
 void fos_hud_draw(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p)
 {
     vr = vram; vp = pitch; pal = p;
@@ -274,6 +275,10 @@ void fos_hud_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p)
     fill(0, VIEW_H, W, BAR_H, p->clear);
     fill(VIEW_W / 2 - 64, VIEW_H / 2 - 64, 129, 129, p->clear);
 }
+#else   /* the EOS M build leaves the older LiveView strip out to stay under the camera's boot size limit: the modern LiveView screen is used */
+void fos_hud_draw(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p) { (void) vram; (void) pitch; (void) h; (void) p; }
+void fos_hud_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p) { (void) vram; (void) pitch; (void) p; }
+#endif
 
 /* ---------------------------------------------------------------- the back screen */
 
@@ -366,9 +371,8 @@ static void well(int x, int y, int w, int hh, int r)
 }
 
 /* a readout in red with a darker extrusion under it */
-static void digits_modern(int cx, int base, const char *s)
+static void digits_font(int cx, int base, const char *s, const struct fos_font *f)
 {
-    const struct fos_font *f = &fos_font_xl;
     const int w = fos_text_w(f, s, 0), x = cx - w / 2;
     uint8_t edge[16], face[16];
     for (int i = 0; i < 16; i++) { edge[i] = i < 4 ? 0 : pal->dark_red; face[i] = i < 4 ? 0 : i < 8 ? pal->dark_red : pal->red; }
@@ -376,7 +380,84 @@ static void digits_modern(int cx, int base, const char *s)
     fos_text_map(vr, vp, W, H, f, x + 1, base + 2, s, edge, 0);
     fos_text_map(vr, vp, W, H, f, x, base, s, face, 0);
 }
+static void digits_modern(int cx, int base, const char *s) { digits_font(cx, base, s, &fos_font_xl); }
 
+/* the modern LiveView screen: the same raised cards as the back screen, small, in the bottom corners, so most of the picture stays clear.
+ * Everything else is transparent (index p->clear), where LiveView shows through. */
+void fos_hud_lv(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p)
+{
+    vr = vram; vp = pitch; pal = p;
+    fill(0, 0, W, H, p->clear);
+
+    /* top left: the look, in a pill */
+    if (h->film)
+    {
+        const int tw = fos_text_w(&fos_font_sm, h->film, 0), pw = tw + 38;
+        rrect(16, 14, pw, 28, 14, p->gray[34]);
+        rrect(17, 15, pw - 2, 26, 13, p->black);
+        fill(27, 22, 3, 12, p->red);
+        text_gray(&fos_font_sm, 38, 34, h->film, 100, 0);
+    }
+    /* top right: the picture quality, the battery and the pictures left, on a dark backing so they read over any picture */
+    {
+        char l1[24], l2[28];
+        snprintf(l1, sizeof(l1), "%s%s", h->quality, h->quality[0] && h->quality_fine ? "  FINE" : "");
+        l2[0] = 0;
+        if (h->battery >= 0) snprintf(l2, sizeof(l2), "%d%%", h->battery);
+        if (h->shots_left >= 0) snprintf(l2 + strlen(l2), sizeof(l2) - strlen(l2), "%s%d", l2[0] ? "   " : "", h->shots_left);
+        const int w1 = fos_text_w(&fos_font_sm, l1, 0), w2 = fos_text_w(&fos_font_sm, l2, 0), w = (w1 > w2 ? w1 : w2) + 24;
+        if (l1[0] || l2[0])
+        {
+            rrect(W - 16 - w, 14, w, 52, 12, p->black);
+            if (l1[0]) text_gray(&fos_font_sm, W - 28 - w1, 36, l1, 100, 0);
+            if (l2[0]) text_gray(&fos_font_sm, W - 28 - w2, 58, l2, 82, 0);
+        }
+    }
+    /* under the look: the bake queue, while there is one */
+    if (h->bake_queued && h->status[0])
+    {
+        const int tw = fos_text_w(&fos_font_xs, h->status, 0);
+        rrect(16, 48, tw + 24, 24, 12, p->black);
+        text_gray(&fos_font_xs, 28, 65, h->status, 88, 0);
+    }
+
+    /* the three cards */
+    static const char *const label[3] = { "SHUTTER", "APERTURE", "ISO" };
+    char text[3][12];
+    snprintf(text[0], sizeof(text[0]), "%s", h->shutter[0] ? h->shutter : "--");
+    fos_format_fstop(text[1], sizeof(text[1]), h->fstop);
+    if (h->iso > 0) snprintf(text[2], sizeof(text[2]), "%d", h->iso);
+    else snprintf(text[2], sizeof(text[2]), "Auto");
+    for (int i = 0; i < 3; i++)
+    {
+        const int x = 16 + i * 132, y = 404;
+        raised(x, y, 124, 60, 14);
+        text_gray(&fos_font_xs, x + 12, y + 16, label[i], 85, 20);
+        well(x + 8, y + 22, 108, 32, 9);
+        digits_font(x + 62, y + 22 + 16 + 10, text[i], &fos_font_lg);
+    }
+    /* the light meter */
+    {
+        const int x = W - 216, y = 404, cx = W - 116, my = y + 36, step = 13;
+        raised(x, y, 200, 60, 14);
+        well(x + 8, y + 10, 184, 40, 9);
+        for (int k = -6; k <= 6; k++)
+        {
+            const int whole = k % 3 == 0, len = whole ? 9 : 4;
+            fill(cx + k * step, my - len / 2, 1, len, p->gray[whole ? 58 : 36]);
+        }
+        fill(cx - 1, my - 14, 3, 28, p->white);
+        if (h->meter)
+        {
+            int off = h->want - h->fstop;
+            if (off < -6) off = -6;
+            if (off > 6) off = 6;
+            for (int r = 0; r <= 8; r++) fill(cx + off * step - (8 - r), my - 18 + r, 2 * (8 - r) + 1, 1, p->red);
+        }
+    }
+}
+
+#ifndef CONFIG_EOSM
 static void plate_modern(const struct fos_hud *h)
 {
     const struct fos_hud_palette *p = pal;
@@ -512,8 +593,8 @@ static void plate_menu(const struct fos_hud *h)
     rrect(x - 2, y + 4, w + 4, ph, 20, p->black);
     rrect(x, y, w, ph, 20, p->gray[50]);
     rrect(x + 1, y + 1, w - 2, ph - 2, 19, p->gray[10]);
-    text_gray(&fos_font_xs, x + 24, y + 30, "LOOK", 85, 28);
-    const char *hint = "DIAL  CHOOSE     SET  DONE";
+    text_gray(&fos_font_xs, x + 24, y + 30, h->menu_title ? h->menu_title : "LOOK", 85, 28);
+    const char *hint = "LENS BUTTON  NEXT     M-FN  DONE";
     text_gray(&fos_font_xs, x + w - 24 - fos_text_w(&fos_font_xs, hint, 20), y + 30, hint, 50, 20);
     fill(x + 20, y + 42, w - 40, 1, p->gray[28]);
     for (int r = 0; r < rows; r++)
@@ -648,3 +729,7 @@ void fos_hud_plate_clear(uint8_t *vram, int pitch, const struct fos_hud_palette 
     vr = vram; vp = pitch; pal = p;
     fill(0, 0, W, H, p->clear);
 }
+#else   /* a LiveView-only camera (the EOS M) has no shooting screen with LiveView off: the plate is left out to save room at boot */
+void fos_hud_plate(uint8_t *vram, int pitch, const struct fos_hud *h, const struct fos_hud_palette *p) { (void) vram; (void) pitch; (void) h; (void) p; }
+void fos_hud_plate_clear(uint8_t *vram, int pitch, const struct fos_hud_palette *p) { (void) vram; (void) pitch; (void) p; }
+#endif

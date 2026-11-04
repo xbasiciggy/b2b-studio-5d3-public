@@ -34,7 +34,6 @@ enum
     RAMP_VIOLET,
     RAMP_BLUE,
     RAMP_LEADER,        /* unprocessed film base */
-    RAMP_DOTS,          /* the dot-matrix background: 32 entries whose colours cycle (fos_gfx_dots_phase) */
     RAMP_COUNT
 };
 
@@ -209,8 +208,7 @@ int fos_text_map(uint8_t *px, int pitch, int w, int h, const struct fos_font *f,
 
 /* small integer helpers */
 int  fos_isqrt(unsigned int v);
-void fos_gfx_dots_theme(int contour);      /* 0 dots (blue-violet-red-amber loop), 1 contour (red-green-blue loop) */
-void fos_gfx_dots_phase(int phase);       /* rotate the colours of RAMP_DOTS; push them with fos_port_palette_part */
+void fos_gfx_accent(int theme);          /* 0 red, 1 orange, 2 neon green: recolour RAMP_RED and the review's red; push with fos_port_palette_part */
 int  fos_sin(int a);    /* a: 0..65535 = one turn; result -4096..4096 */
 int  fos_cos(int a);
 

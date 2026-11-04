@@ -21,7 +21,7 @@ ML_BITRATE_OBJ = bitrate-5d3.o
 ML_AF_PATTERNS_OBJ = n
 
 ML_SRC_EXTRA_OBJS = $(BUILD_DIR)/video_hacks.o $(BUILD_DIR)/afma.o $(BUILD_DIR)/asm.o
-ML_SRC_EXTRA_OBJS += $(BUILD_DIR)/filmroll.o $(BUILD_DIR)/fos_gfx.o $(BUILD_DIR)/fos_film.o $(BUILD_DIR)/fos_ui.o $(BUILD_DIR)/fos_shelf.o $(BUILD_DIR)/fos_pages.o $(BUILD_DIR)/fos_hud.o $(BUILD_DIR)/fos_bake.o $(BUILD_DIR)/fos_studio.o $(BUILD_DIR)/fos_preview.o $(BUILD_DIR)/fos_quick.o $(BUILD_DIR)/tjpgd.o $(BUILD_DIR)/fos_nodark.o $(BUILD_DIR)/fos_jpeg.o
+ML_SRC_EXTRA_OBJS += $(BUILD_DIR)/filmroll.o $(BUILD_DIR)/fos_gfx.o $(BUILD_DIR)/fos_film.o $(BUILD_DIR)/fos_ui.o $(BUILD_DIR)/fos_shelf.o $(BUILD_DIR)/fos_pages.o $(BUILD_DIR)/fos_hud.o $(BUILD_DIR)/fos_bake.o $(BUILD_DIR)/fos_studio.o $(BUILD_DIR)/fos_preview.o $(BUILD_DIR)/fos_quick.o $(BUILD_DIR)/tjpgd.o $(BUILD_DIR)/fos_nodark.o $(BUILD_DIR)/fos_jpeg.o $(BUILD_DIR)/fos_bench.o
 
 include ../Makefile
 .DEFAULT_GOAL := $(BUILD_DIR)/cam_complete

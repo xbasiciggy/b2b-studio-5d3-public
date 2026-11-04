@@ -71,6 +71,7 @@ struct JDEC {
 	uint16_t* huffcode[2][2];	/* Huffman code word tables [id][dcac] */
 	uint8_t* huffdata[2][2];	/* Huffman decoded data tables [id][dcac] */
 	int32_t* qttbl[4];			/* Dequantizer tables [id] */
+	int32_t* qraw[4];			/* Plain dequantizers (q << 8) for the reduced-size IDCT used at 1/2 and 1/4 scale */
 #if JD_FASTDECODE >= 1
 	uint32_t wreg;				/* Working shift register */
 	uint8_t marker;				/* Detected marker (0:None) */

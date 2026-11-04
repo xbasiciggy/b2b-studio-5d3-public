@@ -35,11 +35,8 @@ extern int ui_clobbered;
 
 /* rows that changed this frame (the loop presents them) */
 extern int ui_hints_dark;
-void ui_dots_stamp(int x0, int y0, int x1, int y1, int cx, int cy, int reach);
-void ui_dots_step(int dt);
 int ui_theme(void);
 void ui_bg_theme_rows(int y0, int y1);
-void ui_theme_stamp(int x0, int y0, int x1, int y1, int cx, int cy, int reach);
 void ui_damage(int y0, int y1);
 void ui_damage_all();
 
@@ -55,7 +52,7 @@ float clampf(float v, float lo, float hi);
 
 /* ---------------------------------------------------------------- navigation */
 
-enum { SCR_NONE, SCR_BOOT, SCR_SHELF, SCR_HOME, SCR_PAGE, SCR_ROLL, SCR_DARK, SCR_DEVELOP, SCR_PRINTS, SCR_BAKE_STATUS };
+enum { SCR_NONE, SCR_BOOT, SCR_SHELF, SCR_HOME, SCR_PAGE, SCR_ROLL, SCR_DARK, SCR_DEVELOP, SCR_PRINTS, SCR_BAKE_STATUS, SCR_LOOKS };
 enum { GO_PUSH = 1, GO_POP = -1, GO_FADE = 0 };
 
 void ui_go(int screen, int arg, int how);

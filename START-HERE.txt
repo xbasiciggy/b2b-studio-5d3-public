@@ -1,11 +1,11 @@
-B2B Studio for the Canon EOS 5D Mark III  (beta 6)
+B2B Studio for the Canon EOS 5D Mark III  (beta 7)
 Canon EOS 5D Mark III, CANON FIRMWARE 1.2.3 ONLY.  Experimental software: use at your own risk.
 
 WHAT IT DOES
 Shoot normally (JPEG). Every picture is baked in the background with a film look, using a 3D colour table, and saved
 as a new JPEG in the PIXELJPG folder on the card. Your Canon originals in DCIM are never touched. A film-style
 interface (canister shelf, Home, Images, Develop) runs on the camera's screen. This release comes with the 72
-film looks of the M-Film project and one extra preset, Cold Vibes.
+film looks of the M-Film project and one extra preset, Cold Vibes, and a FUJI X shelf (Astia, Classic Chrome, Classic Neg., Provia, Reala Ace).
 
 WHAT YOU NEED
 - A 5D Mark III on Canon firmware 1.2.3 that already runs Magic Lantern for the 5D3.123 (install Magic Lantern first,

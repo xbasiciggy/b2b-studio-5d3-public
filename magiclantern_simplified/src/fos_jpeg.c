@@ -3,6 +3,7 @@
  * EXIF with the date, the film and the f-stop.
  */
 
+#pragma GCC optimize ("O2")   /* hot pixel loops: the camera build is -Os */
 #include "fos_jpeg.h"
 #include "fos.h"
 #include <string.h>
@@ -68,6 +69,10 @@ __attribute__((weak)) void *fos_port_alloc_hot(int size) { return fos_port_alloc
 
 /* ---------------------------------------------------------------- output */
 
+#ifndef FOS_JPEG_SLOW
+#define FOS_JPEG_SLOW 0         /* 1 builds without the whole-block fast path, the reference for tests/jpegcheck.py */
+#endif
+
 struct jw
 {
     void *f;
@@ -100,13 +105,16 @@ static void put_bits(struct jw *w, uint32_t code, int len)
 {
     w->bits = w->bits << len | (code & ((1u << len) - 1));
     w->nbits += len;
+    if (w->n > (int) sizeof(w->buf) - 16) flush(w);       /* room for the up to 8 bytes (with stuffing) this can write */
+    uint8_t *out = w->buf + w->n;
     while (w->nbits >= 8)
     {
         int b = (int) (w->bits >> (w->nbits - 8)) & 0xFF;
-        put8(w, b);
-        if (b == 0xFF) put8(w, 0);          /* stuffed */
+        *out++ = (uint8_t) b;
+        if (b == 0xFF) *out++ = 0;          /* stuffed */
         w->nbits -= 8;
     }
+    w->n = (int) (out - w->buf);
 }
 
 static void huff_codes(const uint8_t *bits, const uint8_t *vals, uint16_t *code, uint8_t *len)
@@ -160,10 +168,8 @@ static void fdct(int32_t *d)
 
 static int bit_size(int v)
 {
-    int n = 0;
     if (v < 0) v = -v;
-    while (v) { n++; v >>= 1; }
-    return n;
+    return v ? 32 - __builtin_clz((unsigned) v) : 0;    /* one instruction on the camera's ARMv5 */
 }
 
 /* a block of samples (level-shifted) to the file; t: 0 luma, 1 chroma */
@@ -339,9 +345,41 @@ int fos_jpeg_rows(void *writer, const uint8_t *rgb, int stride, int height)
     int width = w->width;
     int *dc = w->dc;
     int32_t blk[64], cb[64], cr[64];
+    int32_t yb[4][64];
     for (int my = 0; my < height; my += 16)
         for (int mx = 0; mx < width; mx += 16)
         {
+            if (!FOS_JPEG_SLOW && height - my >= 16 && width - mx >= 16)
+            {
+                /* a whole 16 x 16 block of the picture: no edge clamping, and chroma from the sums of each 2 x 2 (the same
+                 * integers as adding the four pixels' terms, with a quarter of the multiplies) */
+                for (int y2 = 0; y2 < 8; y2++)
+                {
+                    const uint8_t *r0 = rgb + (my + 2 * y2) * stride + 3 * mx, *r1 = r0 + stride;
+                    int32_t *yrow0 = &yb[(y2 >> 2) * 2][((2 * y2) & 7) * 8], *yrow1 = yrow0 + 8;
+                    int32_t *yrow0r = &yb[(y2 >> 2) * 2 + 1][((2 * y2) & 7) * 8], *yrow1r = yrow0r + 8;
+                    for (int x2 = 0; x2 < 8; x2++, r0 += 6, r1 += 6)
+                    {
+                        int32_t *a0 = x2 < 4 ? yrow0 : yrow0r, *a1 = x2 < 4 ? yrow1 : yrow1r;
+                        const int xo = (x2 & 3) * 2;
+                        int r, g, bl, rs, gs, bs;
+                        r = r0[0]; g = r0[1]; bl = r0[2]; rs = r; gs = g; bs = bl;
+                        a0[xo] = ((19595 * r + 38470 * g + 7471 * bl + 32768) >> 16) - 128;
+                        r = r0[3]; g = r0[4]; bl = r0[5]; rs += r; gs += g; bs += bl;
+                        a0[xo + 1] = ((19595 * r + 38470 * g + 7471 * bl + 32768) >> 16) - 128;
+                        r = r1[0]; g = r1[1]; bl = r1[2]; rs += r; gs += g; bs += bl;
+                        a1[xo] = ((19595 * r + 38470 * g + 7471 * bl + 32768) >> 16) - 128;
+                        r = r1[3]; g = r1[4]; bl = r1[5]; rs += r; gs += g; bs += bl;
+                        a1[xo + 1] = ((19595 * r + 38470 * g + 7471 * bl + 32768) >> 16) - 128;
+                        cb[y2 * 8 + x2] = (-11059 * rs - 21709 * gs + 32768 * bs + 131072) >> 18;
+                        cr[y2 * 8 + x2] = (32768 * rs - 27439 * gs - 5329 * bs + 131072) >> 18;
+                    }
+                }
+                for (int b = 0; b < 4; b++) block(w, yb[b], 0, &dc[0]);
+                block(w, cb, 1, &dc[1]);
+                block(w, cr, 1, &dc[2]);
+                continue;
+            }
             memset(cb, 0, sizeof(cb));
             memset(cr, 0, sizeof(cr));
             for (int b = 0; b < 4; b++)

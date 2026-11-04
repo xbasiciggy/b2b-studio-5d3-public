@@ -37,6 +37,8 @@ static int boot_then_leave;
 static int enter_t;
 #define ENTER_LEN 420
 #define LEAVE_LEN 380
+int fos_port_live(void);
+#define SLIDE_LEN 300                    /* leaving to the back screen: the menu swipes off to the left */
 
 /* the toast */
 static char toast_msg[80];
@@ -514,6 +516,7 @@ void ui_go(int to, int arg, int how)
         case SCR_SHELF: shelf_enter(arg); break;
         case SCR_HOME:  studio_enter(arg);  break;
         case SCR_BAKE_STATUS: bake_status_enter(arg); break;
+        case SCR_LOOKS: looks_enter(arg); break;
         case SCR_PAGE:  page_enter(arg);  break;
         case SCR_ROLL:  roll_enter(arg);  break;
         case SCR_DARK:  dark_enter(arg);  break;
@@ -538,6 +541,7 @@ void ui_leave()
     if (leaving) return;
     leaving = 1;
     leave_t = 0;
+    if (!fos_port_live()) memcpy(buf_snap, cv->px, FOS_W * FOS_H);       /* what the menu shows now, for the swipe */
 }
 
 /* ---------------------------------------------------------------- the loop */
@@ -553,6 +557,7 @@ static void screen_key(int k)
         case SCR_SHELF: shelf_key(k); break;
         case SCR_HOME:  studio_key(k);  break;
         case SCR_BAKE_STATUS: bake_status_key(k); break;
+        case SCR_LOOKS: looks_key(k); break;
         case SCR_PAGE:  page_key(k);  break;
         case SCR_ROLL:  roll_key(k);  break;
         case SCR_DARK:  dark_key(k);  break;
@@ -568,6 +573,7 @@ static int screen_update(int dt)
         case SCR_SHELF: return shelf_update(dt);
         case SCR_HOME:  return studio_update(dt);
         case SCR_BAKE_STATUS: return bake_status_update(dt);
+        case SCR_LOOKS: return looks_update(dt);
         case SCR_PAGE:  return page_update(dt);
         case SCR_ROLL:  return roll_update(dt);
         case SCR_DARK:  return dark_update(dt);
@@ -584,6 +590,7 @@ static void screen_draw()
         case SCR_SHELF: shelf_draw(); break;
         case SCR_HOME:  studio_draw();  break;
         case SCR_BAKE_STATUS: bake_status_draw(); break;
+        case SCR_LOOKS: looks_draw(); break;
         case SCR_PAGE:  page_draw();  break;
         case SCR_ROLL:  roll_draw();  break;
         case SCR_DARK:  dark_draw();  break;
@@ -764,15 +771,21 @@ static void shutter_fill(int with_logo)
     const uint8_t *m = with_logo ? fos_port_logo(&lw, &lh) : 0;
     memset(buf_cv, with_logo || !fos_port_live() ? blk : IX_CLEAR, FOS_W * FOS_H);
     if (!m || lw < 1 || lh < 1 || lw > FOS_W || lh > FOS_H) return;
-    const int row = (lw + 7) / 8, ox = (FOS_W - lw) / 2, oy = (FOS_H - lh) / 2;
-    for (int y = 0; y < lh; y++)
-        for (int x = 0; x < lw; x++)
-            if (m[y * row + (x >> 3)] & (0x80 >> (x & 7)))
-                buf_cv[(oy + y) * FOS_W + ox + x] = wht;
+    /* half size: each pixel covers 2 x 2 of the mask, so its coverage (0..4) picks a grey */
+    const int row = (lw + 7) / 8, dw = lw / 2, dh = lh / 2, ox = (FOS_W - dw) / 2, oy = (FOS_H - dh) / 2;
+#define LOGO_BIT(x, y) ((m[(y) * row + ((x) >> 3)] & (0x80 >> ((x) & 7))) != 0)
+    for (int y = 0; y < dh; y++)
+        for (int x = 0; x < dw; x++)
+        {
+            int n = LOGO_BIT(2 * x, 2 * y) + LOGO_BIT(2 * x + 1, 2 * y) + LOGO_BIT(2 * x, 2 * y + 1) + LOGO_BIT(2 * x + 1, 2 * y + 1);
+            if (n) buf_cv[(oy + y) * FOS_W + ox + x] = n == 4 ? wht : fos_ix(FC(RAMP_GRAY, n * 60));
+        }
+#undef LOGO_BIT
 }
 
 void fos_ui_run(int open)
 {
+    ui_theme();                 /* the colours of the saved theme, before anything is drawn */
     enter_logo = open == FOS_OPEN_HOME;
     int t_open = fos_port_ms();
     if (!ui_alloc())
@@ -803,6 +816,7 @@ void fos_ui_run(int open)
             case FOS_OPEN_REVIEW:   screen = SCR_PRINTS; gallery_enter(-2); break;
             case FOS_OPEN_END:      screen = SCR_ROLL; roll_enter(1); break;
             case FOS_OPEN_DARKROOM: screen = SCR_DARK; dark_enter(0); break;
+            case FOS_OPEN_LOOKS:    screen = SCR_LOOKS; looks_enter(0); break;
             default:                screen = SCR_SHELF; shelf_enter(0); break;
         }
     }
@@ -876,6 +890,25 @@ void fos_ui_run(int open)
             int t;
             if (leaving) { leave_t += dt; t = leave_t; }
             else         { enter_t += dt; t = enter_t; }
+            if (leaving && !fos_port_live())
+            {
+                /* back to the back screen (no LiveView): the menu swipes off to the left, instead of a shutter closing on a black screen */
+                const float f = clampf((float) t / SLIDE_LEN, 0, 1);
+                const int off = (int) (ease_out(f) * FOS_W);
+                const uint8_t blk = fos_ix(FC(RAMP_GRAY, 0));
+                for (int y = 0; y < FOS_H; y++)
+                {
+                    uint8_t *row = cv->px + y * FOS_W;
+                    memcpy(row, buf_snap + y * FOS_W + off, FOS_W - off);
+                    memset(row + FOS_W - off, blk, off);
+                }
+                ui_clobbered = 1;
+                fos_port_present(cv->px, FOS_W, 0, FOS_H);
+                if (t >= SLIDE_LEN) quit = 1;
+                dmg_y0 = FOS_H; dmg_y1 = 0;
+                fos_port_sleep(frame_rest(now));
+                continue;
+            }
             if (screen != SCR_BOOT) screen_draw();
             int open_k;
             int ang = (int) (t * 9);
@@ -887,6 +920,7 @@ void fos_ui_run(int open)
                 {
                     shutter_fill(0);
                     open_k = (int) (ease_out((f - 0.35f) / 0.65f) * 4096);
+                    if (!fos_port_live()) { open_k = 0; quit = 1; }     /* to the back screen: stay on the closed shutter, nothing of Canon's screen is shown */
                 }
                 if (t >= LEAVE_LEN) quit = 1;
             }
@@ -952,111 +986,34 @@ void fos_ui_run(int open)
     ui_free();
 }
 
-/* ---------------------------------------------------------------- dot-matrix background */
+/* ---------------------------------------------------------------- colour themes */
 
 __attribute__((weak)) void fos_port_palette_part(int first, int n) { (void) first; (void) n; }
 
-#define DOT_P 12                /* the grid pitch, pixels */
-
-/* Stamp a swirl of dots into the background (ui_bg), 12 px apart, around (cx, cy) and inside the rectangle x0..x1,
- * y0..y1; reach is how far it spreads, in dots. The dots use RAMP_DOTS indices, so ui_dots_step makes them flow. */
-void ui_dots_stamp(int x0, int y0, int x1, int y1, int cx, int cy, int reach)
+/* The Home and Film menus: 0 red, 1 orange, 2 neon green. A theme recolours RAMP_RED (the gradient and every accent that
+ * uses it) and the red of the review's bake bar; it is applied, and its palette entries sent, the first time it is read
+ * after it changes. */
+int ui_theme(void)
 {
-    const int base = fos_ramp_base[RAMP_DOTS];
-    for (int gy = y0 / DOT_P; gy * DOT_P < y1; gy++)
-        for (int gx = x0 / DOT_P; gx * DOT_P < x1; gx++)
-        {
-            int px = gx * DOT_P + DOT_P / 2, py = gy * DOT_P + DOT_P / 2;
-            if (px < x0 || px >= x1 || py < y0 || py >= y1) continue;
-            int dx = (px - cx) * 16 / DOT_P, dy = (py - cy) * 16 / DOT_P;         /* in 1/16 dot */
-            int rq = fos_isqrt((unsigned) (dx * dx + dy * dy));                    /* 1/16 dot */
-            int th = (int) (atan2f((float) dy, (float) dx) * (65536.0f / 6.2831853f)) & 0xFFFF;
-            /* two arms that wind outward */
-            int arm = (4096 + fos_sin(2 * th - rq * 300)) / 2;                    /* 0..4096 */
-            int dens = (arm * 3 + arm * arm / 4096 * 5) / 8 + 600;          /* broad arms with a floor, so the grid always shows */
-            dens = dens * fos_clamp(4096 - rq * 4096 / (reach * 16), 0, 4096) / 4096 + 700 * fos_clamp(4096 - rq * 64, 0, 4096) / 4096;
-            int ex = (px - x0 < x1 - px ? px - x0 : x1 - px), ey = (py - y0 < y1 - py ? py - y0 : y1 - py);
-            int edge = fos_clamp((ex < ey ? ex : ey) * 4096 / 40, 0, 4096);        /* fades out toward the rectangle's edge */
-            dens = dens * edge / 4096;
-            int R4 = 23 * fos_clamp(dens, 0, 4096) / 4096;                         /* radius in 1/4 px, up to 5.75 px */
-            if (R4 < 5) continue;
-            int ci = base + (((th >> 11) + (rq >> 3)) & 31);
-            for (int j = -6; j < 6; j++)
-                for (int i = -6; i < 6; i++)
-                {
-                    int d2 = (2 * i + 1) * (2 * i + 1) + (2 * j + 1) * (2 * j + 1);
-                    if (4 * d2 <= R4 * R4)
-                        ui_bg[(gy * DOT_P + DOT_P / 2 + j) * FOS_W + gx * DOT_P + DOT_P / 2 + i] = (uint8_t) ci;
-                }
-        }
+    static int applied = -1;
+    const int t = fos_clamp(fos_port_get(FS_THEME), 0, 2);
+    if (t != applied)
+    {
+        const int first = applied < 0;
+        applied = t;
+        fos_gfx_accent(t);
+        /* The first read is as the film OS opens, while Canon's screen is still up: the whole palette is sent when it takes
+         * over, and sending these entries now would repaint Canon's own screen. Later changes are made inside it. */
+        if (!first) fos_port_palette_part(fos_ramp_base[RAMP_RED], fos_ramp_last[RAMP_RED] + 1);
+    }
+    return t;
 }
-
-/* ---- themes for the Home and Film menus: 0 the classic red gradient (no animation), 1 dots, 2 contour; 1 and 2 sit on dark grey */
-int ui_theme(void) { return fos_clamp(fos_port_get(FS_THEME), 0, 2); }
 
 void ui_bg_theme_rows(int y0, int y1)
 {
-    const int th = ui_theme();
+    ui_theme();
     for (int y = y0; y < y1; y++)
         for (int x = 0; x < FOS_W; x++)
-            ui_bg[y * FOS_W + x] = th == 0
-                ? fos_ix_dither(RAMP_RED, (y * y / (FOS_H - 1)) * y * LV12(145) / ((FOS_H - 1) * (FOS_H - 1)), x, y)   /* cubic: more black before the red */
-                : fos_ix_dither(RAMP_GRAY, LV12(24 + y * 8 / (FOS_H - 1)), x, y);                                   /* dark grey, a touch lighter toward the bottom */
-}
-
-/* Concentric oval contours around (cx, cy), drawn as 3 px pixels in three channels offset sideways (red, green, blue),
- * thinning into scattered pixels toward the rectangle's edge: a head-outline-like glow, after "Feel It All Around". */
-static void contour_stamp(int x0, int y0, int x1, int y1, int cx, int cy, int period)
-{
-    const int base = fos_ramp_base[RAMP_DOTS];
-    for (int by = y0 / 3; by * 3 < y1; by++)
-        for (int bx = x0 / 3; bx * 3 < x1; bx++)
-        {
-            int px = bx * 3 + 1, py = by * 3 + 1;
-            if (px < x0 || px >= x1 || py < y0 || py >= y1) continue;
-            int ex = px - x0 < x1 - px ? px - x0 : x1 - px, ey = py - y0 < y1 - py ? py - y0 : y1 - py;
-            int edge = fos_clamp((ex < ey ? ex : ey) * 256 / 40, 0, 256);
-            unsigned h = (unsigned) (bx * 73856093u ^ by * 19349663u);
-            h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
-            if ((int) (h & 255) >= edge) continue;                              /* dissolve toward the edge */
-            int dy = (py - cy) * 3 / 4;                                         /* ovals a little taller than wide */
-            for (int ch = 0; ch < 3; ch++)
-            {
-                int dx = px - cx + (ch - 1) * 4;
-                int rho = fos_isqrt((unsigned) (dx * dx + dy * dy));
-                int pos = rho % period;
-                if (rho < period || pos > 2 || ((h >> (8 + ch)) & 3) == 0) continue;      /* thin rings, with gaps */
-                int ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
-                int pa = (dy * 256) / (ax + ay + 1) + (dx < 0 ? 512 : 0);       /* a pseudo-angle around the centre, 0..1023 */
-                int ci = base + (((pa >> 5) + ch * 11 + (rho / period) * 3) & 31);
-                for (int j = 0; j < 3; j++)
-                    for (int i = 0; i < 3; i++)
-                        ui_bg[(by * 3 + j) * FOS_W + bx * 3 + i] = (uint8_t) ci;
-            }
-        }
-}
-
-/* what a screen asks for once its background is baked */
-void ui_theme_stamp(int x0, int y0, int x1, int y1, int cx, int cy, int reach)
-{
-    int th = ui_theme();
-    if (!th) return;
-    fos_gfx_dots_theme(th == 2);
-    fos_gfx_dots_phase(0);
-    if (th == 1) ui_dots_stamp(x0, y0, x1, y1, cx, cy, reach);
-    else contour_stamp(x0, y0, x1, y1, cx, cy, reach);
-}
-
-/* turn the dots' colours, about 14 times a second, and send only those palette entries to the screen */
-void ui_dots_step(int dt)
-{
-    static int acc, phase;
-    acc += dt;
-    if (acc < 70) return;
-    acc %= 70;
-    if (!ui_theme()) return;                       /* off: nothing to turn */
-    fos_gfx_dots_theme(ui_theme() == 2);
-    fos_gfx_dots_phase(++phase);
-    fos_port_palette_part(fos_ramp_base[RAMP_DOTS], 32);
+            ui_bg[y * FOS_W + x] = fos_ix_dither(RAMP_RED, (y * y / (FOS_H - 1)) * y * LV12(145) / ((FOS_H - 1) * (FOS_H - 1)), x, y);   /* cubic: more black before the colour */
 }
 

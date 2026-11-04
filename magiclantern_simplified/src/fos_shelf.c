@@ -167,7 +167,7 @@ static int stage_lv(int x, int y)
 
 static void stage_bg(int y0, int y1)
 {
-    if (ui_theme()) { ui_bg_theme_rows(y0, y1); return; }            /* the dark-grey themes */
+    ui_theme();
     const int mul = fos_ramp_mul[RAMP_RED];
     const int base = fos_ramp_base[RAMP_RED], last = fos_ramp_last[RAMP_RED];
     for (int y = y0; y < y1; y++)
@@ -437,7 +437,7 @@ static void sample_draw()
         memset(&cv->px[y * cv->pitch], PX_PANEL, FOS_W * SM_INFO_H);
         memset(&cv->px[y * cv->pitch], PX_LINE, FOS_W);
         int x = 20 + ui_photo_text(&fos_font_xs, 20, y + 28, "SAMPLE", 1, 0);
-        snprintf(b, sizeof(b), "%s %s " T_DOT " ISO %d " T_DOT " %s", f->brand, f->name, f->box_iso, f->process);
+        snprintf(b, sizeof(b), "%s%s%s " T_DOT " ISO %d " T_DOT " %s", f->brand, f->brand[0] ? " " : "", f->name, f->box_iso, f->process);
         ui_photo_text(&fos_font_sm, x + 14, y + 28, b, 0, 0);
         ui_photo_text(&fos_font_xs, FOS_W - 20, y + 28, "SET LOAD   PLAY BACK", 0, 2);
     }
@@ -512,7 +512,6 @@ void shelf_key(int k)
 
 int shelf_update(int dt)
 {
-    ui_dots_step(dt);
     if (sm_state != SM_OFF) return sample_update(dt);
     int moving = 0;
     char clock[16];
@@ -672,7 +671,6 @@ static void bake()
     if (!loading) draw_static(OPAQUE);
     ui_to_bg(0);
     /* a swirl of dots behind the canisters, between the tabs and the name */
-    ui_theme_stamp(0, TABS_Y + 24, FOS_W, 290, 360, 176, 30);
     fos_port_clock(baked_clock, sizeof(baked_clock));
 }
 

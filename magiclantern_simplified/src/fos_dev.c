@@ -2025,7 +2025,7 @@ int fos_dev_step(struct fos_dev *d, int budget_ms)
                 /* the picture only: a portrait frame without the print's sides */
                 int x0 = d->rows_axis_x ? d->ox0 : 0, w = d->rows_axis_x ? d->ow : W;
                 char desc[48];
-                snprintf(desc, sizeof(desc), "%s %s", fos_films[d->film].brand, fos_films[d->film].name);
+                snprintf(desc, sizeof(desc), "%s%s%s", fos_films[d->film].brand, fos_films[d->film].brand[0] ? " " : "", fos_films[d->film].name);
                 struct fos_jpeg_meta m = { d->when, desc, d->fstop, 0, 0 };
                 if (!fos_jpeg_write(d->jpeg, d->rgb + 3 * x0, 3 * W, w, H, 92, &m))
                 {

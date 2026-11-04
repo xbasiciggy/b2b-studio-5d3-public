@@ -7,29 +7,31 @@
 __attribute__((weak)) void *fos_port_alloc_hot(int size){return fos_port_alloc(size);}
 struct quick {
  void *fp;unsigned position;
- int w,h,row,rows;uint8_t *strip,*lut;struct fos_preview preview;
+ int w,h,row,rows,read_ms,colour_ms,rows_ms,live;uint8_t *strip,*lut;struct fos_preview preview;
 };
 static size_t quick_read(JDEC *jd,uint8_t *dst,size_t n){
  struct quick *q=jd->device;
  if(!dst){if(fos_port_seek(q->fp,q->position+n)<0)return 0;q->position+=n;return n;}
- int got=fos_port_read(q->fp,dst,n);if(got<=0)return 0;q->position+=got;return got;
+ int t=fos_port_ms();int got=fos_port_read(q->fp,dst,n);q->read_ms+=fos_port_ms()-t;if(got<=0)return 0;q->position+=got;return got;
 }
 static int quick_output(JDEC *jd,void *pixels,JRECT *r){
  struct quick *q=jd->device;uint8_t *src=pixels;(void)jd;
  if(fos_port_background_abort())return 0;
  if(r->top/16*16!=q->row)return 0;
+ int t0=fos_port_ms();unsigned last=0xFFFFFFFFu;uint8_t lastout[3]={0,0,0};
  for(int y=r->top;y<=r->bottom;y++)for(int x=r->left;x<=r->right;x++,src+=3){
   uint8_t *dst=q->strip+((y-q->row)*q->w+x)*3;
-  if(q->lut)fos_lut_pixel(q->lut,src,dst);else{dst[0]=src[0];dst[1]=src[1];dst[2]=src[2];}
+  if(q->lut){unsigned key=(unsigned)src[0]<<16|(unsigned)src[1]<<8|src[2];if(key!=last){fos_lut_pixel(q->lut,src,lastout);last=key;}dst[0]=lastout[0];dst[1]=lastout[1];dst[2]=lastout[2];}
+  else{dst[0]=src[0];dst[1]=src[1];dst[2]=src[2];}
  }
+ q->colour_ms+=fos_port_ms()-t0;
  q->rows=r->bottom-q->row+1;
  if(r->right==q->w-1&&(q->rows==16||r->bottom==q->h-1)){
-  fos_preview_rows(&q->preview,q->strip,q->row,q->rows);q->row+=q->rows;q->rows=0;
+  int t1=fos_port_ms();fos_preview_rows(&q->preview,q->strip,q->row,q->rows);if(q->live)fos_live_progress(&q->preview);q->rows_ms+=fos_port_ms()-t1;q->row+=q->rows;q->rows=0;
  }return 1;
 }
 static unsigned q16(const uint8_t *p,int le){return le?(unsigned)p[0]|(unsigned)p[1]<<8:(unsigned)p[1]|(unsigned)p[0]<<8;}
 static unsigned q32(const uint8_t *p,int le){return le?q16(p,1)|(q16(p+2,1)<<16):q16(p+2,0)|(q16(p,0)<<16);}
-/* early: a smaller review (about 480x320) so it appears sooner and the bake can start; the bake replaces it with the full-size one */
 static int make_preview(const char *source,const char *dest,int film,int use_lut,int early){
  struct quick q;memset(&q,0,sizeof(q));void *pool=0;uint8_t *exif=0;int ok=0,orientation=1;uint32_t taken=0;
  q.fp=fos_port_open(source,0);if(!q.fp)return 0;
@@ -67,18 +69,22 @@ static int make_preview(const char *source,const char *dest,int film,int use_lut
  }
  JDEC jd;if(jd_prepare(&jd,quick_read,pool,65536,&q)!=JDR_OK)goto done;
  int tw=jd.width,th=jd.height;
- const int TW=early?480:720,TH=early?320:480;
+ const int TW=720,TH=480;
  if(tw>TW){th=th*TW/tw;tw=TW;}
  if(th>TH){tw=tw*TH/th;th=TH;}
  int scale=0;
  while(scale<3 && (jd.width>>(scale+1))>=tw && (jd.height>>(scale+1))>=th)scale++;
  q.w=jd.width>>scale;q.h=jd.height>>scale;
  if(!fos_preview_init(&q.preview,q.w,q.h))goto done;
- q.preview.taken=taken;q.preview.early=early;
+ q.preview.taken=taken;q.preview.early=0;
+ if(early){const char *slash=strrchr(dest,'/');fos_live_begin(&q.preview,orientation,slash?slash+1:dest);q.live=1;}
  q.strip=fos_port_alloc_hot(q.w*16*3);if(!q.strip)goto done;
  if(jd_decomp(&jd,quick_output,scale)!=JDR_OK)goto done;
- ok=fos_preview_save(dest,&q.preview,orientation);
-done:fos_port_close(q.fp);fos_preview_free(&q.preview);fos_port_free(q.strip);fos_port_free(q.lut);fos_port_free(pool);fos_port_free(exif);return ok;
+ if(q.live)fos_live_end(&q.preview);
+ int ts=fos_port_ms();ok=fos_preview_save(dest,&q.preview,orientation);
+ {char m[160];snprintf(m,sizeof(m),"quick preview stages: read=%d colour=%d palette/average=%d save=%d ms (%dx%d from %dx%d, scale 1/%d)",q.read_ms,q.colour_ms,q.rows_ms,fos_port_ms()-ts,q.w,q.h,jd.width,jd.height,1<<scale);fos_port_log(m);}
+done:if(q.live){if(fos_live.active){fos_live.finishing=1;fos_live.active=0;while(fos_live.reading)fos_port_sleep(2);}fos_live.result=ok?1:2;}
+ fos_port_close(q.fp);fos_preview_free(&q.preview);fos_port_free(q.strip);fos_port_free(q.lut);fos_port_free(pool);fos_port_free(exif);return ok;
 }
 int fos_quick_preview(const char *source,const char *dest,int film){return make_preview(source,dest,film,1,1);}
 int fos_plain_preview(const char *jpeg){return make_preview(jpeg,jpeg,0,0,0);}
