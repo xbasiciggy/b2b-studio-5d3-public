@@ -9,7 +9,8 @@ Shoot JPEG as usual; every picture is baked in the background with the film look
 Your Canon originals are never touched.
 
 [![Download](https://img.shields.io/badge/Download-eca834?style=for-the-badge)](../../releases/latest)
-[![Look gallery](https://img.shields.io/badge/Look%20gallery-3b352f?style=for-the-badge)](https://basiciggy.com/cfw/looks/)
+[![Film Presets](https://img.shields.io/badge/Film%20Presets-3b352f?style=for-the-badge)](https://basiciggy.com/cfw/looks/)
+[![Gallery](https://img.shields.io/badge/Gallery-3b352f?style=for-the-badge)](https://basiciggy.com/cfw/gallery/)
 [![Roll designer](https://img.shields.io/badge/Film%20Roll%20Designer-3b352f?style=for-the-badge)](https://basiciggy.com/cfw/designer/)
 
 [![License GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-3b352f)](m-film/LICENSE)
@@ -96,7 +97,7 @@ Other cameras reuse these buttons where they exist; [tell us](#testing) which on
 ## Film looks
 
 **72 film looks** from the M-Film project, on shelves of colour negative, slide, black and white and cinema film, plus the **Cold Vibes** preset.
-**Classic Neg.**, **Wildlight** and **Wildlight 2** are coming in the next build. Each has its own colour, grain and halation.
+**Classic Neg.**, **Wildlight** and **Wildlight 2**, and a new **FUJI X** shelf (Astia, Classic Chrome, Classic Neg., Provia, Reala Ace), are coming in the next build. Each has its own colour, grain and halation.
 
 <table>
 <tr>
@@ -178,7 +179,7 @@ copy your photos (`DCIM`, `PIXELJPG`) off, reinstall Magic Lantern, then copy th
 <table>
 <tr>
 <td width="50%"><b><a href="https://basiciggy.com/cfw/designer/">Film Roll Designer</a></b><br>Turns a Lightroom preset, a <code>.cube</code> LUT or a few sliders into a new film roll for the shelf, with a live preview of the canister and the look, and exports the files to copy onto the card. It runs in your browser; nothing is uploaded.</td>
-<td width="50%"><b><a href="https://basiciggy.com/cfw/looks/">Look gallery</a></b><br>Looks other people made. Add one straight to your card from the browser, or <a href="../../issues/new?template=share-a-look.md">share yours</a>.</td>
+<td width="50%"><b><a href="https://basiciggy.com/cfw/looks/">Film Presets</a></b><br>Presets other people made. Add one straight to your card from the browser, or <a href="../../issues/new?template=share-a-look.md">share yours</a>. Sample pictures, each with its film and camera, are in the <a href="https://basiciggy.com/cfw/gallery/">Gallery</a> (<a href="../../issues/new?template=share-a-photo.md">send yours</a>).</td>
 </tr>
 </table>
 
