@@ -892,13 +892,15 @@ static void ui_task(int open)
         fake_simple_button(BGMT_MENU);
 }
 
+/* 0 not tried, 1 loaded, 2 file missing, 3 not usable */
+static int fonts_state;
 static void open_ui(int screen)
 {
     if (ui_running)
         return;
     if (!fos_fonts_ready())
     {
-        NotifyBox(5000, "Film OS: ML/DATA/" FOS_FONT_FILE " is missing");
+        NotifyBox(5000, fonts_state == 2 ? "Film OS: ML/DATA/" FOS_FONT_FILE " is missing" : "Film OS: " FOS_FONT_FILE " could not be loaded");
         return;
     }
     ui_running = 1;
@@ -2125,21 +2127,26 @@ static void load_fonts()
     uint8_t *raw = read_entire_file("ML/DATA/" FOS_FONT_FILE, &size);
     if (!raw)
     {
+        fonts_state = 2;
         dbg("fonts: ML/DATA/%s not found", FOS_FONT_FILE);
         return;
     }
     uint8_t *blob = malloc(size);       /* cached memory, for drawing */
-    if (blob)
+    int copied = blob != 0;
+    if (blob) memcpy(blob, raw, size);
+    else blob = raw;                    /* small heap (EOS M): draw from the file's own buffer */
+    if (fos_fonts_load(blob, size))
     {
-        memcpy(blob, raw, size);
-        if (!fos_fonts_load(blob, size))
-        {
-            free(blob);
-            blob = 0;
-        }
+        fonts_state = 1;
+        if (copied) fio_free(raw);
     }
-    fio_free(raw);
-    dbg("fonts: %d bytes, %s", size, blob ? "loaded" : "not usable");
+    else
+    {
+        fonts_state = 3;
+        if (copied) free(blob);
+        fio_free(raw);
+    }
+    dbg("fonts: %d bytes, %s%s", size, fonts_state == 1 ? "loaded" : "not usable", copied ? "" : " (no heap, using the file buffer)");
 }
 
 /* the first start (no look chosen yet) opens on Cold Vibes; a card without it falls back to the first film */
@@ -2166,16 +2173,17 @@ static void load_films()
         return;
     }
     uint8_t *blob = malloc(size);
-    if (blob)
+    int copied = blob != 0;
+    if (copied) memcpy(blob, raw, size);
+    else blob = raw;                    /* small heap: the films point into the file's own buffer */
+    if (!fos_films_load(blob, size))
     {
-        memcpy(blob, raw, size);
-        if (!fos_films_load(blob, size))
-        {
-            free(blob);
-            blob = 0;
-        }
+        if (copied) free(blob);
+        fio_free(raw);
+        blob = 0;
     }
-    fio_free(raw);
+    else if (copied)
+        fio_free(raw);
     dbg("films: %d (%d bytes, %s)", fos_nfilms, size, blob ? "loaded" : "not usable");
     resolve_default_look();
 }

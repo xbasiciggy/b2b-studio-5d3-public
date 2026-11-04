@@ -32,8 +32,9 @@ static inline char *fos_copy(char *dst, int size, const char *src, int n)
 #define PS_MONO       0x86
 
 /* the shelves the films stand on */
-enum { FOS_GROUP_COLOUR, FOS_GROUP_SLIDE, FOS_GROUP_BW, FOS_GROUP_CINE, FOS_GROUP_PRESETS, FOS_NGROUPS };
+enum { FOS_GROUP_COLOUR, FOS_GROUP_SLIDE, FOS_GROUP_BW, FOS_GROUP_CINE, FOS_GROUP_PRESETS, FOS_GROUP_FUJIX, FOS_NGROUPS };
 extern const char *const fos_group_names[FOS_NGROUPS];
+extern const int fos_group_order[FOS_NGROUPS];   /* the shelves, left to right */
 
 /* a canister label drawn from parts (the films from ML/DATA/FOSFILMS.BIN;
  * the built-in ones have their own painting in fos_film.c). An ink is a

@@ -474,11 +474,13 @@ void shelf_key(int k)
         case FK_UP: case FK_DOWN:
         {
             /* the next shelf (skipping empty ones), at the film last chosen there */
-            int dir = k == FK_DOWN ? 1 : -1, from = group, g = group;
+            int dir = k == FK_DOWN ? 1 : -1, from = group, g = group, at = 0;
+            for (int i = 0; i < FOS_NGROUPS; i++) if (fos_group_order[i] == group) at = i;
             group_at[group] = target;
             do
             {
-                g = (g + dir + FOS_NGROUPS) % FOS_NGROUPS;
+                at = (at + dir + FOS_NGROUPS) % FOS_NGROUPS;
+                g = fos_group_order[at];
                 shelf_list(g, -1);
             }
             while (!nlist && g != from);
@@ -642,7 +644,7 @@ static void draw_static(int alpha)
     int tx = 360 - tw / 2;
     for (int tab = 0; tab < FOS_NGROUPS; tab++)
     {
-        int g = (tab + FOS_NGROUPS - 1) % FOS_NGROUPS;
+        int g = fos_group_order[tab];
         int w = fos_text_w(&fos_font_xs, fos_group_names[g], 64);
         fos_text(cv, &fos_font_xs, tx, TABS_Y, fos_group_names[g], g == group ? C_ACCENT : C_TEXT3, alpha, 64);
         if (g == group) fos_rrect(cv, tx + w / 2 - 8, TABS_Y + 6, 16, 3, 1, C_ACCENT, alpha);

@@ -127,13 +127,13 @@ Each build is made for **one Canon model on one Canon firmware version**, and ne
 
 | Camera | Canon firmware | Magic Lantern | Status | Download |
 |---|---|---|---|---|
-| Canon EOS 5D Mark III | 1.2.3 | 5D3.123 | ⚠️ **Beta.** Tried on one camera | `B2B-Studio-5D3.123-beta7.zip` ([release](../../releases/tag/v0.7.0-beta)) |
-| Canon EOS 6D | 1.1.6 | 6D.116 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
-| Canon EOS M | 2.0.2 | EOSM.202 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
-| Canon EOS 700D / Rebel T5i | 1.1.5 | 700D.115 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
-| Canon EOS 650D / Rebel T4i | 1.0.4 | 650D.104 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
-| Canon EOS 100D / Rebel SL1 | 1.0.1 | 100D.101 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
-| Canon EOS 70D | 1.1.2 | 70D.112 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.7.1-test-builds) |
+| Canon EOS 5D Mark III | 1.2.3 | 5D3.123 | ⚠️ **Beta.** Tried on one camera | `B2B-Studio-5D3.123-beta8.zip` ([release](../../releases/tag/v0.8.0-beta)) |
+| Canon EOS 6D | 1.1.6 | 6D.116 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
+| Canon EOS M | 2.0.2 | EOSM.202 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
+| Canon EOS 700D / Rebel T5i | 1.1.5 | 700D.115 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
+| Canon EOS 650D / Rebel T4i | 1.0.4 | 650D.104 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
+| Canon EOS 100D / Rebel SL1 | 1.0.1 | 100D.101 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
+| Canon EOS 70D | 1.1.2 | 70D.112 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
 
 ⚠️ tried on a camera, experimental · 🧪 builds and fits the camera's boot size limit where known; **nobody has run it on a camera yet**.
 Any other camera or firmware version is not supported.
@@ -185,7 +185,8 @@ copy your photos (`DCIM`, `PIXELJPG`) off, reinstall Magic Lantern, then copy th
 
 ## What is new
 
-- **Beta 7 and test builds round 2:** a new **FUJI X** shelf after Presets, with five looks: Astia, Classic Chrome, Classic Neg., Provia and Reala Ace. The test builds for the other cameras carry it too. Nothing else changed on the 5D Mark III.
+- **Beta 8 and test builds round 3:** the **FUJI X** shelf is now really its own shelf after Presets (Astia, Classic Chrome, Classic Neg., Provia, Reala Ace). Beta 7 and round 2 had those five looks but showed them inside Presets, so their notes were wrong. The fonts and film catalogue also load when memory is tight (EOS M).
+- **Earlier: beta 7 and test builds round 2:** the five Fuji X looks, inside Presets.
 - **Beta 6:** a modern LiveView screen, the camera starts on the shooting screen, M-Fn or the button under the lens opens a full-screen look list, no flashes when leaving a menu, and halation and grain show in the review.
 
 ## What to expect

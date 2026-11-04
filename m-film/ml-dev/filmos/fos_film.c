@@ -44,7 +44,8 @@ static const struct fos_film builtin[] =
 const struct fos_film *fos_films = builtin;
 int fos_nfilms = NBUILTIN;
 
-const char *const fos_group_names[FOS_NGROUPS] = { "COLOUR", "SLIDE", "B&W", "CINE", "PRESETS" };
+const char *const fos_group_names[FOS_NGROUPS] = { "COLOUR", "SLIDE", "B&W", "CINE", "PRESETS", "FUJI X" };
+const int fos_group_order[FOS_NGROUPS] = { FOS_GROUP_PRESETS, FOS_GROUP_FUJIX, FOS_GROUP_COLOUR, FOS_GROUP_SLIDE, FOS_GROUP_BW, FOS_GROUP_CINE };
 
 const struct fos_look *fos_more_looks;
 int fos_nmore_looks;
