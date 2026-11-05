@@ -14,7 +14,7 @@ Your Canon originals are never touched.
 
 [![License GPL-2.0](https://img.shields.io/badge/license-GPL--2.0-3b352f)](m-film/LICENSE)
 [![Status](https://img.shields.io/badge/status-experimental%20beta-orange)](#cameras)
-[![Cameras](https://img.shields.io/badge/cameras-1%20tried%20%C2%B7%206%20in%20testing-3b352f)](#cameras)
+[![Cameras](https://img.shields.io/badge/cameras-2%20tried%20%C2%B7%206%20in%20testing-3b352f)](#cameras)
 [![Looks](https://img.shields.io/badge/film%20looks-72%20%2B%20more-3b352f)](#film-looks)
 
 **English** · [Screens](#a-film-camera-inside-your-camera) · [Looks](#film-looks) · [Cameras](#cameras) · [Install](#putting-it-on-the-camera) · [Make your own](#make-and-share-your-own-looks) · [Build](#build-from-source)
@@ -128,20 +128,22 @@ Each build is made for **one Canon model on one Canon firmware version**, and ne
 | Camera | Canon firmware | Magic Lantern | Status | Download |
 |---|---|---|---|---|
 | Canon EOS 5D Mark III | 1.2.3 | 5D3.123 | ⚠️ **Beta.** Tried on one camera | `B2B-Studio-5D3.123-beta8.zip` ([release](../../releases/tag/v0.8.0-beta)) |
-| Canon EOS 6D | 1.1.6 | 6D.116 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
+| Canon EOS 6D | 1.1.6 | 6D.116 | ⚠️ **Test build.** Tried on one camera | [test release](../../releases/tag/v0.8.1-test-builds) |
 | Canon EOS M | 2.0.2 | EOSM.202 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
 | Canon EOS 700D / Rebel T5i | 1.1.5 | 700D.115 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
 | Canon EOS 650D / Rebel T4i | 1.0.4 | 650D.104 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
 | Canon EOS 100D / Rebel SL1 | 1.0.1 | 100D.101 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
 | Canon EOS 70D | 1.1.2 | 70D.112 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
+| Canon EOS 5D Mark II | 2.1.2 | 5D2.212 | 🧪 Builds, **needs a tester** | [test release](../../releases/tag/v0.8.1-test-builds) |
 
 ⚠️ tried on a camera, experimental · 🧪 builds and fits the camera's boot size limit where known; **nobody has run it on a camera yet**.
 Any other camera or firmware version is not supported.
 
 **Camera notes**
 
-- **5D Mark III:** the only camera it has been run on. Joystick, M-Fn and the lens button all work.
+- **5D Mark III:** the camera it was made on. Joystick, M-Fn and the lens button all work.
 - **6D, 700D, 650D, 100D, 70D:** a wheel and a Q button but no joystick (the 6D), or a touch screen and Q button (the others). Tell us which buttons do something odd.
+- **5D Mark II:** never run on one yet. It leaves out Magic Lantern's video and shooting tools to save boot memory, and its 4:3 screen may look squeezed. Delete the old `ML` folder first and set LV func. to Stills only.
 - **EOS M:** everything happens in LiveView. The touch screen, SET, arrows, wheel, PLAY, MENU, INFO and a two-finger touch (Home) drive it.
 - **700D, 650D, 100D:** boot size is untested on these cameras. If one hangs at power on, take the card out and tell us.
 
@@ -185,6 +187,7 @@ copy your photos (`DCIM`, `PIXELJPG`) off, reinstall Magic Lantern, then copy th
 
 ## What is new
 
+- **5D Mark II test build 1:** the first build for this camera, not yet run on one. The 6D that would not start had its folder copied as `ML 2`; a tester's 6D has now passed all six checks.
 - **Beta 8 and test builds round 3:** the **FUJI X** shelf is now really its own shelf after Presets (Astia, Classic Chrome, Classic Neg., Provia, Reala Ace). Beta 7 and round 2 had those five looks but showed them inside Presets, so their notes were wrong. The fonts and film catalogue also load when memory is tight (EOS M).
 - **Earlier: beta 7 and test builds round 2:** the five Fuji X looks, inside Presets.
 - **Beta 6:** a modern LiveView screen, the camera starts on the shooting screen, M-Fn or the button under the lens opens a full-screen look list, no flashes when leaving a menu, and halation and grain show in the review.

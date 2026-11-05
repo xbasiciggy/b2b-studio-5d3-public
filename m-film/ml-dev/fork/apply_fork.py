@@ -99,6 +99,24 @@ edit("src/boot-d45-am.c",
      "    #elif defined(CONFIG_100D) || defined(CONFIG_70D)\n",
      "film-mode fork: R0 0x44C000 -> 0x520000")
 
+# Cameras with little memory to spare at boot: Magic Lantern tools the film OS never reaches
+# (its menu never opens, see src/menu.c), left out of the build.
+ML_TOOLS_CUT = """FEATURE_ANALOG_GAIN FEATURE_DIGITAL_GAIN FEATURE_AGC_TOGGLE FEATURE_WIND_FILTER FEATURE_INPUT_SOURCE
+FEATURE_MIC_POWER FEATURE_HEADPHONE_MONITORING FEATURE_HEADPHONE_OUTPUT_VOLUME FEATURE_AUDIO_METERS
+FEATURE_GHOST_IMAGE FEATURE_CROPMARKS FEATURE_FALSE_COLOR FEATURE_WAVEFORM FEATURE_SPOTMETER
+FEATURE_RAW_SPOTMETER FEATURE_RAW_ZEBRAS FEATURE_NITRATE FEATURE_REC_INDICATOR
+FEATURE_MOVIE_LOGGING FEATURE_MOVIE_RESTART FEATURE_REC_NOTIFY FEATURE_MOVIE_REC_KEY FEATURE_GRADUAL_EXPOSURE
+FEATURE_FPS_OVERRIDE FEATURE_FPS_RAMPING FEATURE_HDR_VIDEO FEATURE_IMAGE_EFFECTS FEATURE_VIGNETTING_CORRECTION
+FEATURE_SHUTTER_FINE_TUNING FEATURE_HDR_BRACKETING FEATURE_INTERVALOMETER FEATURE_BULB_TIMER
+FEATURE_BULB_TIMER_SHOW_PREVIOUS_PIC FEATURE_AUDIO_REMOTE_SHOT FEATURE_MOTION_DETECT FEATURE_SNAP_SIM
+FEATURE_TRAP_FOCUS FEATURE_FOLLOW_FOCUS FEATURE_RACK_FOCUS FEATURE_FOCUS_STACKING FEATURE_AF_PATTERNS
+FEATURE_LV_CRAZY_COLORS FEATURE_DEFISHING_PREVIEW FEATURE_ANAMORPHIC_PREVIEW FEATURE_FORCE_HDMI_VGA
+FEATURE_PLAY_EXPOSURE_FUSION FEATURE_PLAY_COMPARE_IMAGES FEATURE_PLAY_TIMELAPSE FEATURE_PLAY_EXPOSURE_ADJUST
+FEATURE_SCREENSHOT FEATURE_DONT_CLICK_ME FEATURE_SHOW_TASKS FEATURE_SHOW_CPU_USAGE FEATURE_SHOW_GUI_EVENTS
+FEATURE_SHOW_IMAGE_BUFFERS_INFO FEATURE_SHOW_FREE_MEMORY FEATURE_SHOW_EDMAC_INFO""".split()
+ML_TOOLS_CUT_CAMERAS = ("5D2.212",)
+
+
 def platform(name):
     """FEATURE_FILMROLL, our objects, and no lua, for one camera."""
     # build it in
@@ -108,6 +126,10 @@ def platform(name):
         print(f"  platform/{name}/features.h: patched")
     else:
         print(f"  platform/{name}/features.h: already applied")
+    if name in ML_TOOLS_CUT_CAMERAS and "tools the film OS never reaches" not in p.read_text():
+        p.write_text(p.read_text().rstrip("\n") + "\n\n/* Magic Lantern tools the film OS never reaches (fork/apply_fork.py) */\n"
+                     + "".join(f"#undef {f}\n" for f in ML_TOOLS_CUT) + "\n")
+        print(f"  platform/{name}/features.h: tools cut")
     # our objects. Rewritten every time (older versions of this fork
     # listed only filmroll.o), so the list always matches the sources.
     # (no fos_font: the fonts go on the card as ML/DATA/FOSFONT.BIN, see fos_gfx.h)
